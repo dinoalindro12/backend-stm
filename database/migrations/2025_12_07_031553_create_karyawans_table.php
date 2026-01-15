@@ -26,6 +26,7 @@ return new class extends Migration
             $table->date('tanggal_keluar')->nullable();
             $table->boolean('status_aktif')->default(true);
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 
