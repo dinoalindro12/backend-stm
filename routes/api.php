@@ -9,18 +9,28 @@ use App\Http\Controllers\Api\KaryawanController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Api\PenggajianController;
 use App\Http\Controllers\Api\RekruitmenController;
+use App\Http\Controllers\Api\LowonganKerjaController;
 use App\Http\Controllers\Auth\DeleteAccountController;
 use App\Http\Controllers\Auth\ChangePasswordController;
 use App\Http\Controllers\Api\ExportPenggajianController;
 use App\Http\Controllers\Api\TagihanPerusahaanController;
 use App\Http\Controllers\Api\ExportTagihanPerusahaanController;
 
+
+
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
-// route public rekruitmen
-Route::post('/rekrutmen', [RekruitmenController::class, 'store']);
-Route::post('/check-token', [RekruitmenController::class, 'checkByToken']);
+
+
+// route public lowongan kerja 
+Route::get('/lowongan-kerja', [LowonganKerjaController::class, 'getLowonganAktif']);
+Route::get('/lowongan-kerja/statistik', [LowonganKerjaController::class, 'statistik']);
+Route::get('/lowongan-kerja/{id}', [LowonganKerjaController::class, 'detailLowongan']);
+    
+// Pendaftaran Rekruitmen
+Route::post('/rekruitmen', [RekruitmenController::class, 'store']);
+Route::post('/rekruitmen/cek', [RekruitmenController::class, 'checkStatusByToken']);
 // auth routes
 Route::post('/register', RegisterController::class);
 Route::post('/login', LoginController::class);
@@ -29,11 +39,11 @@ Route::post('/ganti-password', ChangePasswordController::class)->middleware('aut
 // manajemen rekruitmen
 Route::middleware('auth:sanctum')->prefix('rekruitmen')->group(function () {
     // bagian ini diproteksi menggunakan sanctum
-    Route::get('/rekrutan', [RekruitmenController::class, 'index']);
+    Route::get('/', [RekruitmenController::class, 'index']);
     Route::get('/{id}', [RekruitmenController::class, 'show']);
-    Route::post('/{id}', [RekruitmenController::class, 'update']); // Using POST for file uploads
+    Route::put('/{id}', [RekruitmenController::class, 'update']);
     Route::delete('/{id}', [RekruitmenController::class, 'destroy']);
-    Route::post('/{id}/status', [RekruitmenController::class, 'updateStatus']);
+    Route::patch('/{id}/status', [RekruitmenController::class, 'updateStatus']);
 });
 // manajemen karyawan
 Route::middleware('auth:sanctum')->group(function () {
@@ -87,7 +97,7 @@ Route::middleware('auth:sanctum')->prefix('penggajian')->name('api.penggajian.')
     Route::get('/{id}', [PenggajianController::class, 'show']);
     Route::put('/{id}', [PenggajianController::class, 'update']);
     Route::delete('/{id}', [PenggajianController::class, 'destroy']);
-    
+    Route::get('/{id}/send-whatsapp', [PenggajianController::class, 'sendWhatsApp']);
     // Additional Routes
     Route::post('/batch', [PenggajianController::class, 'batchStore']);
     Route::post('/{id}/cetak', [PenggajianController::class, 'cetakSlip']);
@@ -97,9 +107,14 @@ Route::middleware('auth:sanctum')->prefix('penggajian')->name('api.penggajian.')
 
 Route::middleware('auth:sanctum')->group(function () {
     // Hapus akun langsung (dengan konfirmasi password)
-    Route::delete('/hapus-akun', DeleteAccountController::class);
-
-    // routes/api.php
-
-    
+    Route::delete('/hapus-akun', DeleteAccountController::class);    
+});
+Route::middleware('auth:sanctum')->prefix('lowongan')->group(function () {
+    // bagian ini diproteksi menggunakan sanctum
+    Route::get('/', [LowonganKerjaController::class, 'index']);
+    Route::post('/', [LowonganKerjaController::class, 'store']);
+    Route::get('/{id}', [LowonganKerjaController::class, 'show']);
+    Route::put('/{id}', [LowonganKerjaController::class, 'update']);
+    Route::delete('/{id}', [LowonganKerjaController::class, 'destroy']);
+    Route::get('/{id}/pelamar', [LowonganKerjaController::class, 'pelamar']);
 });

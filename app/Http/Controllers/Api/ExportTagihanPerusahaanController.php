@@ -207,7 +207,7 @@ class ExportTagihanPerusahaanController extends Controller
                 periode_akhir,
                 COUNT(*) as total,
                 SUM(total_diterima) as total_tagihan,
-                SUM(upa_yang_diterima_pekerja) as total_upa_pekerja
+                SUM(upah_yang_diterima_pekerja) as total_upa_pekerja
             ')
             ->groupBy('periode_awal', 'periode_akhir')
             ->orderBy('periode_awal', 'desc')

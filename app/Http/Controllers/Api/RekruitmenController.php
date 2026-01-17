@@ -2,27 +2,43 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
 use App\Models\Rekruitmen;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use App\Models\LowonganKerja;
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use App\Http\Resources\RekruitmenResource;
+use App\Http\Resources\StatusTerimaResource;
 
 class RekruitmenController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $rekruitmen = Rekruitmen::paginate(10);
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Data rekruitmen berhasil diambil',
-            'data' => $rekruitmen
-        ]);
+        $query = Rekruitmen::with('lowonganKerja');
+
+        // Filter berdasarkan status
+        if ($request->has('status_terima')) {
+            $query->where('status_terima', $request->status_terima);
+        }
+
+        // Filter berdasarkan lowongan
+        if ($request->has('lowongan_kerja_id')) {
+            $query->where('lowongan_kerja_id', $request->lowongan_kerja_id);
+        }
+
+        // Filter berdasarkan posisi
+        if ($request->has('posisi_dilamar')) {
+            $query->where('posisi_dilamar', $request->posisi_dilamar);
+        }
+
+        $rekruitmen = $query->latest()->paginate($request->per_page ?? 10);
+
+        return RekruitmenResource::collection($rekruitmen);
     }
 
     /**
@@ -31,308 +47,224 @@ class RekruitmenController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'nik' => 'required|unique:rekruitmen|max:16',
-            'nama' => 'required|string|max:100',
+            'lowongan_kerja_id' => 'required|exists:lowongan_kerja,id',
+            'nik' => 'required|string|unique:rekruitmen,nik|max:16',
+            'nama' => 'required|string|max:255',
             'nama_lengkap' => 'required|string|max:255',
-            'posisi_dilamar' => 'required|string|max:50',
+            'posisi_dilamar' => 'required|string|max:255',
+            'no_wa' => 'required|string|max:20',
+            'alamat' => 'nullable|string',
             'foto_ktp' => 'required|image|mimes:jpeg,png,jpg|max:2048',
             'foto_kk' => 'required|image|mimes:jpeg,png,jpg|max:2048',
             'foto_skck' => 'required|image|mimes:jpeg,png,jpg|max:2048',
             'pas_foto' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'surat_sehat' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'surat_anti_narkoba' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'surat_lamaran' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'cv' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'no_wa' => 'required|string|max:15',
-            'alamat' => 'required|string|max:500',
+            'surat_sehat' => 'required|file|mimes:pdf,jpeg,png,jpg|max:2048',
+            'surat_anti_narkoba' => 'required|file|mimes:pdf,jpeg,png,jpg|max:2048',
+            'surat_lamaran' => 'required|file|mimes:pdf|max:2048',
+            'cv' => 'required|file|mimes:pdf|max:2048',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validasi gagal',
+                'message' => 'Validation error',
                 'errors' => $validator->errors()
             ], 422);
         }
 
-        try {
-            $tokenPendaftaran = Str::random(32);
-
-            $fotoKtpPath = $request->file('foto_ktp')->store('rekruitmen/ktp', 'public');
-            $fotoKkPath = $request->file('foto_kk')->store('rekruitmen/kk', 'public');
-            $fotoSkckPath = $request->file('foto_skck')->store('rekruitmen/skck', 'public');
-            $pasFotoPath = $request->file('pas_foto')->store('rekruitmen/pas_foto', 'public');
-            $suratSehat = $request->file('surat_sehat')->store('rekruitmen/surat_sehat', 'public');
-            $suratNarkoba = $request->file('surat_anti_narkoba')->store('rekruitmen/surat_anti_narkoba', 'public');
-            $suratLamaran = $request->file('surat_lamaran')->store('rekruitmen/surat_lamaran', 'public');
-            $cv = $request->file('cv')->store('rekruitmen/cv', 'public');
-
-            $rekruitmen = Rekruitmen::create([
-                'nik' => $request->nik,
-                'nama' => $request->nama,
-                'nama_lengkap' => $request->nama_lengkap,
-                'posisi_dilamar' => $request->posisi_dilamar,
-                'foto_ktp' => $fotoKtpPath,
-                'foto_kk' => $fotoKkPath,
-                'foto_skck' => $fotoSkckPath,
-                'pas_foto' => $pasFotoPath,
-                'surat_sehat' => $suratSehat,
-                'surat_anti_narkoba' => $suratNarkoba,
-                'surat_lamaran' => $suratLamaran,
-                'cv' => $cv,
-                'token_pendaftaran' => $tokenPendaftaran,
-                'no_wa' => $request->no_wa,
-                'alamat' => $request->alamat,
-                'status_terima' => 'pending',
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Lamaran berhasil dikirim',
-                'data' => [
-                    'rekruitmen' => $rekruitmen,
-                    'token_pendaftaran' => $tokenPendaftaran
-                ]
-            ], 201);
-                
-        } catch (\Exception $e) {
+        // Cek apakah lowongan masih aktif
+        $lowongan = LowonganKerja::find($request->lowongan_kerja_id);
+        if ($lowongan->status_lowongan !== 'aktif' || $lowongan->deadline_lowongan < now()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
-            ], 500);
+                'message' => 'Lowongan kerja sudah tidak aktif atau melewati deadline'
+            ], 400);
         }
+
+        // Upload files
+        $data = $request->except(['foto_ktp', 'foto_kk', 'foto_skck', 'pas_foto', 'surat_sehat', 'surat_anti_narkoba', 'surat_lamaran', 'cv']);
+        
+        $files = ['foto_ktp', 'foto_kk', 'foto_skck', 'pas_foto', 'surat_sehat', 'surat_anti_narkoba', 'surat_lamaran', 'cv'];
+        
+        foreach ($files as $file) {
+            if ($request->hasFile($file)) {
+                $data[$file] = $request->file($file)->store('rekruitmen', 'public');
+            }
+        }
+
+        // Generate token pendaftaran
+        $data['token_pendaftaran'] = Str::random(32);
+
+        $rekruitmen = Rekruitmen::create($data);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pendaftaran berhasil',
+            'data' => new RekruitmenResource($rekruitmen->load('lowonganKerja'))
+        ], 201);
     }
 
     /**
      * Display the specified resource.
      */
-    public function show($id)
+    public function show(string $id)
     {
-        $rekruitmen = Rekruitmen::find($id);
-        
+        $rekruitmen = Rekruitmen::with('lowonganKerja')->find($id);
+
         if (!$rekruitmen) {
             return response()->json([
                 'success' => false,
-                'message' => 'Data tidak ditemukan'
+                'message' => 'Data rekruitmen tidak ditemukan'
             ], 404);
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'Data rekruitmen berhasil diambil',
-            'data' => $rekruitmen
+            'data' => new RekruitmenResource($rekruitmen)
         ]);
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, string $id)
     {
         $rekruitmen = Rekruitmen::find($id);
-        
+
         if (!$rekruitmen) {
             return response()->json([
                 'success' => false,
-                'message' => 'Data tidak ditemukan'
+                'message' => 'Data rekruitmen tidak ditemukan'
             ], 404);
         }
 
         $validator = Validator::make($request->all(), [
-            'nik' => 'required|max:16|unique:rekruitmen,nik,' . $id,
-            'nama' => 'required|string|max:100',
-            'nama_lengkap' => 'required|string|max:255',
-            'posisi_dilamar' => 'required|string|max:50',
-            'no_wa' => 'required|string|max:15',
-            'alamat' => 'required|string|max:500',
-            'foto_ktp' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'foto_kk' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'foto_skck' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'pas_foto' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'surat_sehat' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'surat_anti_narkoba' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'surat_lamaran' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'cv' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'status_terima' => 'nullable|in:pending,diterima,ditolak',
-            'catatan' => 'nullable|string|max:1000',
+            'lowongan_kerja_id' => 'sometimes|required|exists:lowongan_kerja,id',
+            'nik' => 'sometimes|required|string|max:16|unique:rekruitmen,nik,' . $id,
+            'nama' => 'sometimes|required|string|max:255',
+            'nama_lengkap' => 'sometimes|required|string|max:255',
+            'posisi_dilamar' => 'sometimes|required|string|max:255',
+            'no_wa' => 'sometimes|required|string|max:20',
+            'alamat' => 'nullable|string',
+            'status_terima' => 'sometimes|required|in:pending,diterima,ditolak',
+            'catatan' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validasi gagal',
+                'message' => 'Validation error',
                 'errors' => $validator->errors()
             ], 422);
         }
 
-        try {
-            $data = [
-                'nik' => $request->nik,
-                'nama' => $request->nama,
-                'nama_lengkap' => $request->nama_lengkap,
-                'posisi_dilamar' => $request->posisi_dilamar,
-                'no_wa' => $request->no_wa,
-                'alamat' => $request->alamat,
-            ];
+        $rekruitmen->update($request->all());
 
-            if ($request->has('status_terima')) {
-                $data['status_terima'] = $request->status_terima;
-            }
-
-            if ($request->has('catatan')) {
-                $data['catatan'] = $request->catatan;
-            }
-
-            // Handle file uploads
-            $fileFields = [
-                'foto_ktp' => 'rekruitmen/ktp',
-                'foto_kk' => 'rekruitmen/kk',
-                'foto_skck' => 'rekruitmen/skck',
-                'pas_foto' => 'rekruitmen/pas_foto',
-                'surat_sehat' => 'rekruitmen/surat_sehat',
-                'surat_anti_narkoba' => 'rekruitmen/surat_anti_narkoba',
-                'surat_lamaran' => 'rekruitmen/surat_lamaran',
-                'cv' => 'rekruitmen/cv',
-            ];
-
-            foreach ($fileFields as $field => $path) {
-                if ($request->hasFile($field)) {
-                    if ($rekruitmen->$field) {
-                        Storage::disk('public')->delete($rekruitmen->$field);
-                    }
-                    $data[$field] = $request->file($field)->store($path, 'public');
-                }
-            }
-
-            $rekruitmen->update($data);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Data rekruitmen berhasil diperbarui',
-                'data' => $rekruitmen->fresh()
-            ]);
-                
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Data rekruitmen berhasil diupdate',
+            'data' => new RekruitmenResource($rekruitmen->load('lowonganKerja'))
+        ]);
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy($id)
+    public function destroy(string $id)
     {
         $rekruitmen = Rekruitmen::find($id);
-        
+
         if (!$rekruitmen) {
             return response()->json([
                 'success' => false,
-                'message' => 'Data tidak ditemukan'
+                'message' => 'Data rekruitmen tidak ditemukan'
             ], 404);
         }
 
-        try {
-            Storage::disk('public')->delete([
-                $rekruitmen->foto_ktp,
-                $rekruitmen->foto_kk,
-                $rekruitmen->foto_skck,
-                $rekruitmen->pas_foto,
-                $rekruitmen->surat_sehat,
-                $rekruitmen->surat_anti_narkoba,
-                $rekruitmen->surat_lamaran,
-                $rekruitmen->cv,
-            ]);
-
-            $rekruitmen->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Data rekruitmen berhasil dihapus'
-            ]);
-                
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
-            ], 500);
+        // Hapus semua file
+        $files = ['foto_ktp', 'foto_kk', 'foto_skck', 'pas_foto', 'surat_sehat', 'surat_anti_narkoba', 'surat_lamaran', 'cv'];
+        
+        foreach ($files as $file) {
+            if ($rekruitmen->$file && Storage::disk('public')->exists($rekruitmen->$file)) {
+                Storage::disk('public')->delete($rekruitmen->$file);
+            }
         }
+
+        $rekruitmen->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data rekruitmen berhasil dihapus'
+        ]);
     }
 
     /**
-     * Update status penerimaan
+     * Update status terima
      */
-    public function updateStatus(Request $request, $id)
+    public function updateStatus(Request $request, string $id)
     {
         $rekruitmen = Rekruitmen::find($id);
-        
+
         if (!$rekruitmen) {
             return response()->json([
                 'success' => false,
-                'message' => 'Data tidak ditemukan'
+                'message' => 'Data rekruitmen tidak ditemukan'
             ], 404);
         }
 
         $validator = Validator::make($request->all(), [
             'status_terima' => 'required|in:pending,diterima,ditolak',
-            'catatan' => 'nullable|string|max:1000',
+            'catatan' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validasi gagal',
+                'message' => 'Validation error',
                 'errors' => $validator->errors()
             ], 422);
         }
 
-        $rekruitmen->update([
-            'status_terima' => $request->status_terima,
-            'catatan' => $request->catatan,
-        ]);
+        $rekruitmen->update($request->only(['status_terima', 'catatan']));
 
         return response()->json([
             'success' => true,
-            'message' => 'Status rekruitmen berhasil diperbarui',
-            'data' => $rekruitmen->fresh()
+            'message' => 'Status berhasil diupdate',
+            'data' => new RekruitmenResource($rekruitmen->load('lowonganKerja'))
         ]);
     }
 
     /**
-     * Cek status by token pendaftaran
+     * Cari berdasarkan token
      */
-    public function checkByToken(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'token_pendaftaran' => 'required|string',
-            'nama_lengkap' => 'required|string',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validasi gagal',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $rekruitmen = Rekruitmen::where('token_pendaftaran', $request->token_pendaftaran)
-            ->where('nama_lengkap', $request->nama_lengkap)
-            ->first();
-
-        if (!$rekruitmen) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Data tidak ditemukan. Pastikan token dan nama lengkap sesuai.'
-            ], 404);
-        }
-
+    
+public function checkStatusByToken(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'token' => 'required|string',
+    ]);
+    
+    if ($validator->fails()) {
         return response()->json([
-            'success' => true,
-            'message' => 'Data rekruitmen berhasil ditemukan',
-            'data' => $rekruitmen
-        ]);
+            'success' => false,
+            'message' => 'Validation error',
+            'errors' => $validator->errors()
+        ], 422);
     }
+    
+    $rekruitmen = Rekruitmen::where('token_pendaftaran', $request->token)->first();
+    
+    if (!$rekruitmen) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Token tidak valid atau tidak ditemukan'
+        ], 404);
+    }
+    
+    return response()->json([
+        'success' => true,
+        'message' => 'Status rekruitmen berhasil ditemukan',
+        'data' => new StatusTerimaResource($rekruitmen)
+    ]);
+}
 }

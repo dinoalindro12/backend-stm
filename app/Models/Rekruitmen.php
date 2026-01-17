@@ -2,15 +2,17 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Rekruitmen extends Model
 {
+    use HasFactory;
+
     protected $table = 'rekruitmen';
 
-    protected $primaryKey = 'id';
-
     protected $fillable = [
+        'lowongan_kerja_id',
         'nik',
         'nama',
         'nama_lengkap',
@@ -27,10 +29,19 @@ class Rekruitmen extends Model
         'cv',
         'token_pendaftaran',
         'status_terima',
-        'catatan'
+        'catatan',
     ];
 
     protected $casts = [
-        'status_terima' => 'string'
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
+
+    /**
+     * Relasi dengan Lowongan Kerja
+     */
+    public function lowonganKerja()
+    {
+        return $this->belongsTo(LowonganKerja::class);
+    }
 }

@@ -442,4 +442,131 @@ class PenggajianController extends Controller
             ], 500);
         }
     }
+    /**
+     * Kirim slip gaji ke WhatsApp (Simple version)
+     */
+    public function sendWhatsApp($id)
+    {
+        try {
+            $penggajian = Penggajian::with('karyawan')->findOrFail($id);
+            
+            // Pastikan karyawan memiliki nomor WhatsApp
+            if (empty($penggajian->karyawan->no_wa)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Nomor WhatsApp karyawan tidak tersedia'
+                ], 400);
+            }
+            
+            // Format pesan
+            $pesan = $this->formatPesanSlip($penggajian);
+            
+            // Format nomor WhatsApp (hapus 0 di awal, tambah 62)
+            $nomor = $this->formatNomorWA($penggajian->karyawan->no_wa);
+            
+            // Generate WhatsApp URL
+            $url = "https://wa.me/{$nomor}?text=" . urlencode($pesan);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'URL WhatsApp berhasil dibuat',
+                'data' => [
+                    'penggajian_id' => $penggajian->id,
+                    'karyawan' => $penggajian->nama,
+                    'no_wa' => $penggajian->karyawan->no_wa,
+                    'whatsapp_url' => $url
+                ]
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data penggajian tidak ditemukan'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat link WhatsApp',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Format pesan slip gaji
+     */
+    private function formatPesanSlip($penggajian)
+    {
+        // Format bulan tahun
+        $bulanTahun = \Carbon\Carbon::parse($penggajian->gajian_bulan)
+            ->locale('id')
+            ->translatedFormat('F Y');
+
+        // Hitung total potongan
+        $totalPotongan = $penggajian->bpjs_kesehatan + 
+                        $penggajian->bpjs_jht + 
+                        $penggajian->bpjs_jp;
+
+        // Hitung gaji bersih
+        $gajiBersih = $penggajian->jumlah_penghasilan_kotor - $totalPotongan + ($penggajian->uang_thr ?? 0);
+
+        // Hitung total lembur (asumsi Rp 50.000 per jam)
+        $gajiLembur = $penggajian->jumlah_lembur * 50000;
+
+        $pesan = "🧾 *SLIP GAJI - {$bulanTahun}*\n\n";
+        $pesan .= "━━━━━━━━━━━━━━━━━━━━\n\n";
+        $pesan .= "*📋 Informasi Karyawan:*\n";
+        $pesan .= "Nama: {$penggajian->nama}\n";
+        $pesan .= "No. Induk: {$penggajian->no_induk}\n";
+        $pesan .= "NIK: {$penggajian->nik}\n";
+        $pesan .= "Posisi: " . ucfirst(str_replace('_', ' ', $penggajian->posisi)) . "\n";
+        $pesan .= "No. Rek BRI: {$penggajian->no_rek_bri}\n\n";
+        
+        $pesan .= "*💰 Rincian Gaji:*\n";
+        $pesan .= "Gaji Pokok: Rp " . number_format($penggajian->jumlah_penghasilan_kotor, 0, ',', '.') . "\n";
+        $pesan .= "Gaji Harian: Rp " . number_format($penggajian->gaji_harian, 0, ',', '.') . "\n";
+        $pesan .= "Jumlah Hari Kerja: {$penggajian->jumlah_hari_kerja} hari\n";
+        $pesan .= "Lembur ({$penggajian->jumlah_lembur} jam): Rp " . number_format($gajiLembur, 0, ',', '.') . "\n";
+        
+        if ($penggajian->uang_thr > 0) {
+            $pesan .= "Uang THR: Rp " . number_format($penggajian->uang_thr, 0, ',', '.') . "\n";
+        }
+        
+        $pesan .= "\n*📊 Potongan:*\n";
+        $pesan .= "BPJS Kesehatan: Rp " . number_format($penggajian->bpjs_kesehatan, 0, ',', '.') . "\n";
+        $pesan .= "BPJS JHT: Rp " . number_format($penggajian->bpjs_jht, 0, ',', '.') . "\n";
+        $pesan .= "BPJS JP: Rp " . number_format($penggajian->bpjs_jp, 0, ',', '.') . "\n";
+        $pesan .= "Total Potongan: Rp " . number_format($totalPotongan, 0, ',', '.') . "\n\n";
+        
+        $pesan .= "━━━━━━━━━━━━━━━━━━━━\n";
+        $pesan .= "*✅ TOTAL DITERIMA:*\n";
+        $pesan .= "*Rp " . number_format($gajiBersih, 0, ',', '.') . "*\n";
+        $pesan .= "━━━━━━━━━━━━━━━━━━━━\n\n";
+        
+        $pesan .= "_Slip ini dikirim otomatis dari sistem penggajian._\n";
+        $pesan .= "_Terima kasih atas kerja keras Anda! 🙏_";
+
+        return $pesan;
+    }
+
+    /**
+     * Format nomor WhatsApp ke format internasional
+     */
+    private function formatNomorWA($nomor)
+    {
+        // Hapus semua karakter non-digit
+        $nomor = preg_replace('/[^0-9]/', '', $nomor);
+
+        // Jika diawali 0, ganti dengan 62
+        if (substr($nomor, 0, 1) === '0') {
+            $nomor = '62' . substr($nomor, 1);
+        }
+
+        // Jika tidak diawali 62, tambahkan 62
+        if (substr($nomor, 0, 2) !== '62') {
+            $nomor = '62' . $nomor;
+        }
+
+        return $nomor;
+    }
 }
