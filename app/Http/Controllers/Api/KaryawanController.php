@@ -163,10 +163,7 @@ class KaryawanController extends Controller
                 ], 404);
             }
             
-            return (new KaryawanResource($karyawan))->additional([
-                'success' => true,
-                'message' => 'Detail Data Karyawan'
-            ]);
+            return (new KaryawanResource($karyawan));
             
         } catch (\Exception $e) {
             return response()->json([
@@ -286,26 +283,13 @@ class KaryawanController extends Controller
                     'message' => 'Data karyawan tidak ditemukan'
                 ], 404);
             }
-            
-            // Cek apakah karyawan masih memiliki data penggajian aktif
-            $hasPenggajianAktif = $karyawan->penggajian()
-                ->where('periode_akhir', '>=', now())
-                ->exists();
-                
-            if ($hasPenggajianAktif) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Tidak dapat menghapus karyawan yang masih memiliki penggajian aktif'
-                ], 400);
-            }
-            
             // Hapus foto jika ada
             if ($karyawan->image && Storage::disk('public')->exists($karyawan->image)) {
                 Storage::disk('public')->delete($karyawan->image);
             }
             
             // Soft delete
-            $karyawan->delete();
+            $karyawan->delete($id);
             
             DB::commit();
 

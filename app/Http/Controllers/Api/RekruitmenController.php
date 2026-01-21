@@ -17,7 +17,7 @@ class RekruitmenController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index(Request $request)
+public function index(Request $request)
     {
         $query = Rekruitmen::with('lowonganKerja');
 
@@ -37,6 +37,14 @@ class RekruitmenController extends Controller
         }
 
         $rekruitmen = $query->latest()->paginate($request->per_page ?? 10);
+
+        // Cek jika data tidak ditemukan
+        if ($rekruitmen->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Sejauh ini belum ada yang mengajukan lamaran'
+            ], 200);
+        }
 
         return RekruitmenResource::collection($rekruitmen);
     }
@@ -238,33 +246,33 @@ class RekruitmenController extends Controller
      * Cari berdasarkan token
      */
     
-public function checkStatusByToken(Request $request)
-{
-    $validator = Validator::make($request->all(), [
-        'token' => 'required|string',
-    ]);
-    
-    if ($validator->fails()) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Validation error',
-            'errors' => $validator->errors()
-        ], 422);
+    public function checkStatusByToken(Request $request)
+        {
+            $validator = Validator::make($request->all(), [
+                'token' => 'required|string',
+            ]);
+            
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            
+            $rekruitmen = Rekruitmen::where('token_pendaftaran', $request->token)->first();
+            
+            if (!$rekruitmen) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token tidak valid atau tidak ditemukan'
+                ], 404);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Status rekruitmen berhasil ditemukan',
+                'data' => new StatusTerimaResource($rekruitmen)
+            ]);
+        }
     }
-    
-    $rekruitmen = Rekruitmen::where('token_pendaftaran', $request->token)->first();
-    
-    if (!$rekruitmen) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Token tidak valid atau tidak ditemukan'
-        ], 404);
-    }
-    
-    return response()->json([
-        'success' => true,
-        'message' => 'Status rekruitmen berhasil ditemukan',
-        'data' => new StatusTerimaResource($rekruitmen)
-    ]);
-}
-}
