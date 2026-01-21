@@ -31,6 +31,7 @@ class TagihanPerusahaanExport implements
     protected $posisi;
     protected $data;
     protected $totalData = 0;
+    protected $mappedData;
 
     public function __construct($periodeAwal, $periodeAkhir, $posisi = null)
     {
@@ -39,6 +40,7 @@ class TagihanPerusahaanExport implements
         $this->posisi = $posisi;
         $this->data = $this->getData();
         $this->totalData = $this->data->count();
+        $this->mappedData = $this->mapData();
     }
 
     /**
@@ -58,15 +60,45 @@ class TagihanPerusahaanExport implements
     }
 
     /**
-     * Return collection
+     * Map data untuk hanya mengambil kolom yang dibutuhkan
      */
-    public function collection()
+    private function mapData()
     {
-        return $this->data;
+        return $this->data->map(function($tagihan) {
+            return [
+                // Kolom-kolom yang akan ditampilkan di Excel
+                'no_induk' => $tagihan->no_induk,
+                'nik' => $tagihan->nik,
+                'nama' => $tagihan->nama,
+                'posisi' => $tagihan->posisi,
+                'bpjs_kesehatan' => $tagihan->bpjs_kesehatan ?? 0,
+                'jkk' => $tagihan->jkk ?? 0,
+                'jkm' => $tagihan->jkm ?? 0,
+                'jht' => $tagihan->jht ?? 0,
+                'jp' => $tagihan->jp ?? 0,
+                'seragam_cs_dan_keamanan' => $tagihan->seragam_cs_dan_keamanan ?? 0,
+                'fee_manajemen' => $tagihan->fee_manajemen ?? 0,
+                'thr' => $tagihan->thr ?? 0,
+                'jumlah_hari_kerja' => $tagihan->jumlah_hari_kerja ?? 0,
+                'gaji_harian' => $tagihan->gaji_harian ?? 0,
+                'lembur' => $tagihan->lembur ?? 0,
+                'upah_yang_diterima_pekerja' => $tagihan->upah_yang_diterima_pekerja ?? 0,
+                'total_diterima' => $tagihan->total_diterima ?? 0,
+            ];
+        });
     }
 
     /**
-     * Define headings - 17 kolom sesuai screenshot
+     * Return collection yang sudah dimapping
+     */
+    public function collection()
+    {
+        // Kembalikan data yang sudah dimapping, bukan model langsung
+        return $this->mappedData;
+    }
+
+    /**
+     * Define headings - 18 kolom
      */
     public function headings(): array
     {
@@ -76,21 +108,19 @@ class TagihanPerusahaanExport implements
             'NIK',                          // C
             'NAMA',                         // D
             'Bagian',                       // E
-            'Jumlah Gaji Diterima',        // F
-            'BPJS Kesehatan',              // G
-            'JKK',                         // H
-            'JKM',                         // I
-            'JHT',                         // J
-            'JP',                          // K
-            'Seragam CS dan Keamanan',     // L
-            'Fee Manajemen',               // M
-            'Jumlah Iuran',                // N
-            'THR',                         // O
-            'Jumlah Hari Kerja',           // P
-            'Gaji Harian',                 // Q
-            'Lembur',                      // R
-            'Upah yang Diterima Pekerja',   // S
-            'Total Diterima'               // T
+            'BPJS Kesehatan',               // F
+            'JKK',                          // G
+            'JKM',                          // H
+            'JHT',                          // I
+            'JP',                           // J
+            'Seragam CS dan Keamanan',      // K
+            'Fee Manajemen',                // L
+            'THR',                          // M
+            'Jumlah Hari Kerja',            // N
+            'Gaji Harian',                  // O
+            'Lembur',                       // P
+            'Upah yang Diterima Pekerja',   // Q
+            'Total Diterima'                // R
         ];
     }
 
@@ -104,9 +134,9 @@ class TagihanPerusahaanExport implements
 
         // ========== HEADER INFORMASI PERUSAHAAN ==========
         
-        // Nama Perusahaan
+        // Nama Perusahaan (18 kolom: A-R)
         $sheet->setCellValue('A1', 'PT SURYA TAMADO MANDIRI');
-        $sheet->mergeCells('A1:T1');
+        $sheet->mergeCells('A1:R1');
         $sheet->getStyle('A1')->applyFromArray([
             'font' => [
                 'bold' => true,
@@ -121,7 +151,7 @@ class TagihanPerusahaanExport implements
 
         // Judul Laporan
         $sheet->setCellValue('A2', 'LAPORAN TAGIHAN PERUSAHAAN');
-        $sheet->mergeCells('A2:T2');
+        $sheet->mergeCells('A2:R2');
         $sheet->getStyle('A2')->applyFromArray([
             'font' => [
                 'bold' => true,
@@ -141,7 +171,7 @@ class TagihanPerusahaanExport implements
         }
         
         $sheet->setCellValue('A3', $periodeText);
-        $sheet->mergeCells('A3:T3');
+        $sheet->mergeCells('A3:R3');
         $sheet->getStyle('A3')->applyFromArray([
             'font' => [
                 'size' => 12,
@@ -155,7 +185,7 @@ class TagihanPerusahaanExport implements
 
         // Tanggal Cetak
         $sheet->setCellValue('A4', 'Tanggal Cetak: ' . now()->format('d/m/Y H:i:s'));
-        $sheet->mergeCells('A4:T4');
+        $sheet->mergeCells('A4:R4');
         $sheet->getStyle('A4')->applyFromArray([
             'font' => [
                 'size' => 10,
@@ -175,7 +205,7 @@ class TagihanPerusahaanExport implements
         $sheet->getRowDimension(4)->setRowHeight(18);
 
         // ========== HEADER TABEL ==========
-        $sheet->getStyle("A{$headerRow}:T{$headerRow}")->applyFromArray([
+        $sheet->getStyle("A{$headerRow}:R{$headerRow}")->applyFromArray([
             'font' => [
                 'bold' => true,
                 'color' => ['rgb' => 'FFFFFF'],
@@ -215,21 +245,19 @@ class TagihanPerusahaanExport implements
             'C' => 18,  // NIK
             'D' => 25,  // NAMA
             'E' => 20,  // Bagian
-            'F' => 20,  // Jumlah Gaji Diterima
-            'G' => 18,  // BPJS Kesehatan
-            'H' => 12,  // JKK
-            'I' => 12,  // JKM
-            'J' => 15,  // JHT
-            'K' => 12,  // JP
-            'L' => 20,  // Seragam CS dan Keamanan
-            'M' => 18,  // Fee Manajemen
-            'N' => 18,  // Jumlah Iuran
-            'O' => 15,  // THR
-            'P' => 18,  // Jumlah Hari Kerja
-            'Q' => 15,  // Gaji Harian
-            'R' => 15,  // Lembur
-            'S' => 22,  // Upa yang Diterima Pekerja
-            'T' => 22   // Total Diterima
+            'F' => 18,  // BPJS Kesehatan
+            'G' => 12,  // JKK
+            'H' => 12,  // JKM
+            'I' => 15,  // JHT
+            'J' => 12,  // JP
+            'K' => 20,  // Seragam CS dan Keamanan
+            'L' => 18,  // Fee Manajemen
+            'M' => 15,  // THR
+            'N' => 18,  // Jumlah Hari Kerja
+            'O' => 15,  // Gaji Harian
+            'P' => 15,  // Lembur
+            'Q' => 22,  // Upah yang Diterima Pekerja
+            'R' => 22   // Total Diterima
         ];
     }
 
@@ -282,30 +310,29 @@ class TagihanPerusahaanExport implements
                 if ($this->totalData > 0) {
                     $row = $startDataRow;
                     
-                    foreach ($this->data as $index => $tagihan) {
+                    // Gunakan data yang sudah dimapping
+                    foreach ($this->mappedData as $index => $tagihan) {
                         $no = $index + 1;
                         
-                        // Tulis data per kolom (20 kolom: A-T)
+                        // Tulis data per kolom (18 kolom: A-R)
                         $sheet->setCellValue("A{$row}", $no);
-                        $sheet->setCellValue("B{$row}", $tagihan->no_induk);
-                        $sheet->setCellValue("C{$row}", $tagihan->nik);
-                        $sheet->setCellValue("D{$row}", $tagihan->nama);
-                        $sheet->setCellValue("E{$row}", $this->getPosisiLabel($tagihan->posisi));
-                        $sheet->setCellValue("F{$row}", $tagihan->jumlah_gaji_diterima ?? 3732900);
-                        $sheet->setCellValue("G{$row}", $tagihan->bpjs_kesehatan ?? 0);
-                        $sheet->setCellValue("H{$row}", $tagihan->jkk ?? 0);
-                        $sheet->setCellValue("I{$row}", $tagihan->jkm ?? 0);
-                        $sheet->setCellValue("J{$row}", $tagihan->jht ?? 0);
-                        $sheet->setCellValue("K{$row}", $tagihan->jp ?? 0);
-                        $sheet->setCellValue("L{$row}", $tagihan->seragam_cs_dan_keamanan ?? 0);
-                        $sheet->setCellValue("M{$row}", $tagihan->fee_manajemen ?? 0);
-                        $sheet->setCellValue("N{$row}", $tagihan->jumlah_iuran_bpjs ?? 0);
-                        $sheet->setCellValue("O{$row}", $tagihan->thr ?? 0);
-                        $sheet->setCellValue("P{$row}", $tagihan->jumlah_hari_kerja ?? 0);
-                        $sheet->setCellValue("Q{$row}", $tagihan->gaji_harian ?? 0);
-                        $sheet->setCellValue("R{$row}", $tagihan->lembur ?? 0);
-                        $sheet->setCellValue("S{$row}", $tagihan->upah_yang_diterima_pekerja ?? 0);
-                        $sheet->setCellValue("T{$row}", $tagihan->total_diterima ?? 0);
+                        $sheet->setCellValue("B{$row}", $tagihan['no_induk']);
+                        $sheet->setCellValue("C{$row}", $tagihan['nik']);
+                        $sheet->setCellValue("D{$row}", $tagihan['nama']);
+                        $sheet->setCellValue("E{$row}", $this->getPosisiLabel($tagihan['posisi']));
+                        $sheet->setCellValue("F{$row}", $tagihan['bpjs_kesehatan']);
+                        $sheet->setCellValue("G{$row}", $tagihan['jkk']);
+                        $sheet->setCellValue("H{$row}", $tagihan['jkm']);
+                        $sheet->setCellValue("I{$row}", $tagihan['jht']);
+                        $sheet->setCellValue("J{$row}", $tagihan['jp']);
+                        $sheet->setCellValue("K{$row}", $tagihan['seragam_cs_dan_keamanan']);
+                        $sheet->setCellValue("L{$row}", $tagihan['fee_manajemen']);
+                        $sheet->setCellValue("M{$row}", $tagihan['thr']);
+                        $sheet->setCellValue("N{$row}", $tagihan['jumlah_hari_kerja']);
+                        $sheet->setCellValue("O{$row}", $tagihan['gaji_harian']);
+                        $sheet->setCellValue("P{$row}", $tagihan['lembur']);
+                        $sheet->setCellValue("Q{$row}", $tagihan['upah_yang_diterima_pekerja']);
+                        $sheet->setCellValue("R{$row}", $tagihan['total_diterima']);
                         
                         $row++;
                     }
@@ -315,7 +342,7 @@ class TagihanPerusahaanExport implements
                     // ========== APPLY STYLES TO DATA ==========
                     
                     // Style untuk data rows
-                    $sheet->getStyle("A{$startDataRow}:T{$endDataRow}")->applyFromArray([
+                    $sheet->getStyle("A{$startDataRow}:R{$endDataRow}")->applyFromArray([
                         'borders' => [
                             'allBorders' => [
                                 'borderStyle' => Border::BORDER_THIN,
@@ -330,7 +357,7 @@ class TagihanPerusahaanExport implements
                     // Zebra striping
                     for ($r = $startDataRow; $r <= $endDataRow; $r++) {
                         if ($r % 2 == 0) {
-                            $sheet->getStyle("A{$r}:T{$r}")->applyFromArray([
+                            $sheet->getStyle("A{$r}:R{$r}")->applyFromArray([
                                 'fill' => [
                                     'fillType' => Fill::FILL_SOLID,
                                     'startColor' => ['rgb' => 'F2F2F2']
@@ -342,7 +369,7 @@ class TagihanPerusahaanExport implements
                     // ========== NUMBER FORMATTING ==========
                     
                     // Format currency untuk kolom angka
-                    $currencyColumns = ['F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'Q', 'R', 'S', 'T'];
+                    $currencyColumns = ['F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'O', 'P', 'Q', 'R'];
                     foreach ($currencyColumns as $col) {
                         $sheet->getStyle("{$col}{$startDataRow}:{$col}{$endDataRow}")
                             ->getNumberFormat()
@@ -350,7 +377,7 @@ class TagihanPerusahaanExport implements
                     }
 
                     // Format untuk jumlah hari kerja (dengan desimal)
-                    $sheet->getStyle("P{$startDataRow}:P{$endDataRow}")
+                    $sheet->getStyle("N{$startDataRow}:N{$endDataRow}")
                         ->getNumberFormat()
                         ->setFormatCode('0.0');
 
@@ -366,7 +393,7 @@ class TagihanPerusahaanExport implements
                             ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
                     }
 
-                    $sheet->getStyle("P{$startDataRow}:P{$endDataRow}")
+                    $sheet->getStyle("N{$startDataRow}:N{$endDataRow}")
                         ->getAlignment()
                         ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
@@ -379,7 +406,7 @@ class TagihanPerusahaanExport implements
                     $sheet->getStyle("A{$totalRow}")->getAlignment()
                         ->setHorizontal(Alignment::HORIZONTAL_CENTER);
                     
-                    // Formulas untuk total
+                    // Formulas untuk total (sesuai kolom yang ada)
                     $sheet->setCellValue("F{$totalRow}", "=SUM(F{$startDataRow}:F{$endDataRow})");
                     $sheet->setCellValue("G{$totalRow}", "=SUM(G{$startDataRow}:G{$endDataRow})");
                     $sheet->setCellValue("H{$totalRow}", "=SUM(H{$startDataRow}:H{$endDataRow})");
@@ -388,11 +415,9 @@ class TagihanPerusahaanExport implements
                     $sheet->setCellValue("K{$totalRow}", "=SUM(K{$startDataRow}:K{$endDataRow})");
                     $sheet->setCellValue("L{$totalRow}", "=SUM(L{$startDataRow}:L{$endDataRow})");
                     $sheet->setCellValue("M{$totalRow}", "=SUM(M{$startDataRow}:M{$endDataRow})");
-                    $sheet->setCellValue("N{$totalRow}", "=SUM(N{$startDataRow}:N{$endDataRow})");
-                    $sheet->setCellValue("O{$totalRow}", "=SUM(O{$startDataRow}:O{$endDataRow})");
+                    $sheet->setCellValue("P{$totalRow}", "=SUM(P{$startDataRow}:P{$endDataRow})");
+                    $sheet->setCellValue("Q{$totalRow}", "=SUM(Q{$startDataRow}:Q{$endDataRow})");
                     $sheet->setCellValue("R{$totalRow}", "=SUM(R{$startDataRow}:R{$endDataRow})");
-                    $sheet->setCellValue("S{$totalRow}", "=SUM(S{$startDataRow}:S{$endDataRow})");
-                    $sheet->setCellValue("T{$totalRow}", "=SUM(T{$startDataRow}:T{$endDataRow})");
 
                     // Style untuk TOTAL row
                     $totalRowStyle = [
@@ -415,7 +440,7 @@ class TagihanPerusahaanExport implements
                         ]
                     ];
 
-                    $sheet->getStyle("A{$totalRow}:T{$totalRow}")->applyFromArray($totalRowStyle);
+                    $sheet->getStyle("A{$totalRow}:R{$totalRow}")->applyFromArray($totalRowStyle);
 
                     // Format angka untuk TOTAL row
                     foreach ($currencyColumns as $col) {
@@ -436,10 +461,9 @@ class TagihanPerusahaanExport implements
                         ->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
                     if ($this->totalData > 0) {
-                        $sheet->setCellValue("F{$avgRow}", "=F{$totalRow}/{$this->totalData}");
-                        $sheet->setCellValue("N{$avgRow}", "=N{$totalRow}/{$this->totalData}");
-                        $sheet->setCellValue("S{$avgRow}", "=S{$totalRow}/{$this->totalData}");
-                        $sheet->setCellValue("T{$avgRow}", "=T{$totalRow}/{$this->totalData}");
+                        // Hanya kolom yang relevan untuk rata-rata
+                        $sheet->setCellValue("Q{$avgRow}", "=Q{$totalRow}/{$this->totalData}");
+                        $sheet->setCellValue("R{$avgRow}", "=R{$totalRow}/{$this->totalData}");
                     }
 
                     // Style untuk RATA-RATA row
@@ -461,10 +485,10 @@ class TagihanPerusahaanExport implements
                         ]
                     ];
 
-                    $sheet->getStyle("A{$avgRow}:T{$avgRow}")->applyFromArray($avgRowStyle);
+                    $sheet->getStyle("A{$avgRow}:R{$avgRow}")->applyFromArray($avgRowStyle);
 
                     // Format angka untuk RATA-RATA
-                    foreach (['F', 'N', 'S', 'T'] as $col) {
+                    foreach (['Q', 'R'] as $col) {
                         $sheet->getStyle("{$col}{$avgRow}")
                             ->getNumberFormat()
                             ->setFormatCode('#,##0');
@@ -477,7 +501,7 @@ class TagihanPerusahaanExport implements
                 } else {
                     // Jika tidak ada data
                     $sheet->setCellValue("A{$startDataRow}", 'TIDAK ADA DATA');
-                    $sheet->mergeCells("A{$startDataRow}:T{$startDataRow}");
+                    $sheet->mergeCells("A{$startDataRow}:R{$startDataRow}");
                     $sheet->getStyle("A{$startDataRow}")->applyFromArray([
                         'font' => [
                             'bold' => true,
