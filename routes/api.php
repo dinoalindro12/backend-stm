@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\KontakController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Api\KaryawanController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Api\PenggajianController;
 use App\Http\Controllers\Api\RekruitmenController;
@@ -64,7 +65,6 @@ Route::middleware('auth:sanctum')->prefix('kontak')->name('api.kontak.')->group(
 });
 Route::post('kontak', [KontakController::class, 'store'])->name('api.kontak.store');
 Route::middleware('auth:sanctum')->prefix('tagihan')->name('api.tagihan.')->group(function () {
-Route::get('export/test', [ExportTagihanPerusahaanController::class, 'testData']);
     Route::get('export/available-periodes', [ExportTagihanPerusahaanController::class, 'getAvailablePeriodes']);
     Route::get('export/preview', [ExportTagihanPerusahaanController::class, 'previewExport']);
     Route::get('export/excel', [ExportTagihanPerusahaanController::class, 'exportExcel']);
@@ -80,14 +80,6 @@ Route::get('export/test', [ExportTagihanPerusahaanController::class, 'testData']
     Route::post('/{id}/restore', [TagihanPerusahaanController::class, 'restore']);
 });
 Route::middleware('auth:sanctum')->prefix('penggajian')->name('api.penggajian.')->group(function () {
-    // Route::get('/', [PenggajianController::class, 'index'])->name('index');
-    // Route::post('/', [PenggajianController::class, 'store'])->name('store');
-    // Route::get('/{id}', [PenggajianController::class, 'show'])->name('show');
-    // Route::put('/{id}', [PenggajianController::class, 'update'])->name('update');
-    // Route::delete('/{id}', [PenggajianController::class, 'destroy'])->name('destroy');
-    // Route::post('/filter', [PenggajianController::class, 'filterByPeriode'])->name('filter-periode');
-    // Route::get('/penggajian/get-by-periode', [PenggajianController::class, 'getByPeriode']);
-    
     // route export penggajian
     Route::get('/available-months', [ExportPenggajianController::class, 'getAvailableMonths']);
     Route::get('/preview', [ExportPenggajianController::class, 'previewExport']);
@@ -117,4 +109,11 @@ Route::middleware('auth:sanctum')->prefix('lowongan')->group(function () {
     Route::put('/{id}', [LowonganKerjaController::class, 'update']);
     Route::delete('/{id}', [LowonganKerjaController::class, 'destroy']);
     Route::get('/{id}/pelamar', [LowonganKerjaController::class, 'pelamar']);
+});
+Route::middleware('auth:sanctum')->prefix('dashboard')->group(function () {
+    Route::get('/dashboard', [DashboardController::class, 'getDashboardData']);
+    Route::get('/status', [DashboardController::class, 'getStats']);
+    Route::get('/summary', [DashboardController::class, 'getSummary']);
+    Route::get('/gaji-chart', [DashboardController::class, 'getGajiChart']);
+    Route::get('/pelamar-chart', [DashboardController::class, 'getPelamarChart']);
 });
