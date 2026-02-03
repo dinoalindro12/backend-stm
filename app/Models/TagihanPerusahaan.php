@@ -70,13 +70,34 @@ class TagihanPerusahaan extends Model
     /**
      * Boot method untuk auto-calculate
      */
-    protected static function boot()
-    {
-        parent::boot();
+   protected static function boot()
+{
+    parent::boot();
 
-        static::saving(function ($tagihan) {
+    static::saving(function ($tagihan) {
+        // Hitung upa pekerja terlebih dahulu (gaji pokok + lembur + thr)
+        $tagihan->upa_pekerja = 
+            ($tagihan->gaji_harian * $tagihan->jumlah_hari_kerja) + 
+            ($tagihan->lembur ?? 0) + 
+            ($tagihan->thr ?? 0);
+
+        // Jika jumlah hari kerja kurang dari 7, set semua komponen ke 0
+        if ($tagihan->jumlah_hari_kerja < 7) {
+            $tagihan->bpjs_kesehatan = 0;
+            $tagihan->jht = 0;
+            $tagihan->jp = 0;
+            $tagihan->jkk = 0;
+            $tagihan->jkm = 0;
+            $tagihan->seragam_cs_dan_keamanan = 0;
+            $tagihan->fee_manajemen = 0;
             
-            // Hitung iuran dan bpjs
+            // Jika tidak ada potongan, upah yang diterima = upa pekerja
+            $tagihan->upah_yang_diterima_pekerja = $tagihan->upa_pekerja;
+            
+            // Total diterima = upa pekerja (karena tidak ada tambahan iuran)
+            $tagihan->total_diterima = $tagihan->upa_pekerja;
+        } else {
+            // Hitung jumlah iuran bpjs (hanya jika hari kerja >= 7)
             $tagihan->jumlah_iuran_bpjs = 
                 $tagihan->bpjs_kesehatan + 
                 $tagihan->jkk + 
@@ -85,21 +106,18 @@ class TagihanPerusahaan extends Model
                 $tagihan->jp + 
                 $tagihan->seragam_cs_dan_keamanan + 
                 $tagihan->fee_manajemen;
-            // Hitung upa yang diterima pekerja
-            $tagihan->upa_pekerja = 
-            ($tagihan->gaji_harian * $tagihan->jumlah_hari_kerja) + 
-            ($tagihan->lembur ?? 0) + 
-            ($tagihan->thr ?? 0);
-            // gaji yang diterima pekerja
-            $tagihan->upah_yang_diterima_pekerja = 
-                $tagihan->upa_pekerja - 149316;
             
-                // Hitung total tagihan
+            // Hitung upah yang diterima pekerja (dengan potongan)
+            // Sesuaikan nilai 149316 dengan kebutuhan bisnis Anda
+            $tagihan->upah_yang_diterima_pekerja = 
+                $tagihan->upa_pekerja - $tagihan->gaji_harian;
+            
+            // Hitung total diterima (upa pekerja + total iuran)
             $tagihan->total_diterima = 
-            $tagihan->upa_pekerja + 
-            $tagihan->jumlah_iuran_bpjs;
-        });
-    }
+                $tagihan->upa_pekerja + $tagihan->jumlah_iuran_bpjs;
+        }
+    });
+}
     
     // ========== SCOPES BARU ==========
 

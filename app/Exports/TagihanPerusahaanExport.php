@@ -242,7 +242,7 @@ class TagihanPerusahaanExport implements
         return [
             'A' => 6,   // No
             'B' => 15,  // No Induk
-            'C' => 18,  // NIK
+            'C' => 20,  // NIK (diperlebar untuk menampung angka panjang)
             'D' => 25,  // NAMA
             'E' => 20,  // Bagian
             'F' => 18,  // BPJS Kesehatan
@@ -317,16 +317,22 @@ class TagihanPerusahaanExport implements
                         // Tulis data per kolom (18 kolom: A-R)
                         $sheet->setCellValue("A{$row}", $no);
                         $sheet->setCellValue("B{$row}", $tagihan['no_induk']);
-                        $sheet->setCellValue("C{$row}", $tagihan['nik']);
+                        
+                        // *** FORMAT NIK SEBAGAI TEXT AGAR TIDAK JADI NOTASI ILMIAH ***
+                        $sheet->setCellValueExplicit("C{$row}", $tagihan['nik'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                        
                         $sheet->setCellValue("D{$row}", $tagihan['nama']);
                         $sheet->setCellValue("E{$row}", $this->getPosisiLabel($tagihan['posisi']));
-                        $sheet->setCellValue("F{$row}", $tagihan['bpjs_kesehatan']);
-                        $sheet->setCellValue("G{$row}", $tagihan['jkk']);
-                        $sheet->setCellValue("H{$row}", $tagihan['jkm']);
-                        $sheet->setCellValue("I{$row}", $tagihan['jht']);
-                        $sheet->setCellValue("J{$row}", $tagihan['jp']);
-                        $sheet->setCellValue("K{$row}", $tagihan['seragam_cs_dan_keamanan']);
-                        $sheet->setCellValue("L{$row}", $tagihan['fee_manajemen']);
+                        
+                        // *** TAMPILKAN HANYA JIKA TIDAK NOL ***
+                        $sheet->setCellValue("F{$row}", $tagihan['bpjs_kesehatan'] != 0 ? $tagihan['bpjs_kesehatan'] : '');
+                        $sheet->setCellValue("G{$row}", $tagihan['jkk'] != 0 ? $tagihan['jkk'] : '');
+                        $sheet->setCellValue("H{$row}", $tagihan['jkm'] != 0 ? $tagihan['jkm'] : '');
+                        $sheet->setCellValue("I{$row}", $tagihan['jht'] != 0 ? $tagihan['jht'] : '');
+                        $sheet->setCellValue("J{$row}", $tagihan['jp'] != 0 ? $tagihan['jp'] : '');
+                        $sheet->setCellValue("K{$row}", $tagihan['seragam_cs_dan_keamanan'] != 0 ? $tagihan['seragam_cs_dan_keamanan'] : '');
+                        $sheet->setCellValue("L{$row}", $tagihan['fee_manajemen'] != 0 ? $tagihan['fee_manajemen'] : '');
+                        
                         $sheet->setCellValue("M{$row}", $tagihan['thr']);
                         $sheet->setCellValue("N{$row}", $tagihan['jumlah_hari_kerja']);
                         $sheet->setCellValue("O{$row}", $tagihan['gaji_harian']);
