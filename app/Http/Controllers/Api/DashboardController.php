@@ -16,7 +16,7 @@ use App\Http\Resources\DashboardResource;
 class DashboardController extends Controller
 {
     /**
-     * Get all dashboard data
+     * mendapatkan semua data dashboard
      */
     public function getDashboardData(Request $request): JsonResponse
     {
@@ -36,7 +36,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get stats data
+     * mendapatkan statistik data dari seluruh database mulai dari karyawan penggajian, tagihan, rekrutimen, lowongan dan kontak
      */
     private function getStatsData(): array
     {
@@ -101,7 +101,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get summary data
+     * mendapatkan ringkasan data penting utama 
      */
     private function getSummaryData(): array
     {
@@ -122,7 +122,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get gaji chart data
+     * mendaparkan chart data gaji dan tagihan
      */
     private function getGajiChartData(Request $request): array
     {
@@ -183,7 +183,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get pelamar chart data
+     * mendapatkan chart data pelamar
      */
     private function getPelamarChartData(Request $request): array
     {
@@ -230,7 +230,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get recent data
+     * mendapatkan data terbaru
      */
     private function getRecentData(): array
     {
