@@ -75,6 +75,7 @@ class TagihanPerusahaan extends Model
         parent::boot();
 
         static::saving(function ($tagihan) {
+            
             // Hitung iuran dan bpjs
             $tagihan->jumlah_iuran_bpjs = 
                 $tagihan->bpjs_kesehatan + 

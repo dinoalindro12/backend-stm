@@ -63,32 +63,40 @@ class Penggajian extends Model
 
     // Mutator untuk perhitungan otomatis
     protected static function boot()
-    {
-        parent::boot();
+{
+    parent::boot();
 
-        static::saving(function ($penggajian) {
-            // Hitung Total BPJS
-            $penggajian->total_bpjs = 
-                $penggajian->bpjs_kesehatan + 
-                $penggajian->bpjs_jht + 
-                $penggajian->bpjs_jp;
+    static::saving(function ($penggajian) {
+        // Cek jika jumlah hari kerja kurang dari 7
+        if ($penggajian->jumlah_hari_kerja < 7) {
+            // Set semua BPJS ke 0
+            $penggajian->bpjs_kesehatan = 0;
+            $penggajian->bpjs_jht = 0;
+            $penggajian->bpjs_jp = 0;
+        }
 
-            // Hitung Jumlah Penghasilan Kotor
-            // (Gaji Harian * Jumlah Hari Kerja) + Lembur + THR
-            $penggajian->upah_kotor_karyawan = 
-                ($penggajian->gaji_harian * $penggajian->jumlah_hari_kerja) + 
-                $penggajian->jumlah_lembur + 
-                ($penggajian->uang_thr ?? 0);
+        // Hitung Total BPJS
+        $penggajian->total_bpjs = 
+            $penggajian->bpjs_kesehatan + 
+            $penggajian->bpjs_jht + 
+            $penggajian->bpjs_jp;
 
-            // Hitung Upah Kotor Karyawan (sama dengan jumlah penghasilan kotor)
+        // Hitung Jumlah Penghasilan Kotor
+        // (Gaji Harian * Jumlah Hari Kerja) + Lembur + THR
+        $penggajian->upah_kotor_karyawan = 
+            ($penggajian->gaji_harian * $penggajian->jumlah_hari_kerja) + 
+            $penggajian->jumlah_lembur + 
+            ($penggajian->uang_thr ?? 0);
+
+        // Hitung Upah Kotor Karyawan (sama dengan jumlah penghasilan kotor)
 
 
-            // Hitung Upah Diterima (Upah Kotor - Total BPJS)
-            $penggajian->upah_diterima = 
-                $penggajian->upah_kotor_karyawan - 
-                $penggajian->total_bpjs;
-        });
-    }
+        // Hitung Upah Diterima (Upah Kotor - Total BPJS)
+        $penggajian->upah_diterima = 
+            $penggajian->upah_kotor_karyawan - 
+            $penggajian->total_bpjs;
+    });
+}
     // ========== SCOPES BARU ==========
     
     /**

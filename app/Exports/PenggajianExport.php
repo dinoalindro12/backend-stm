@@ -9,32 +9,27 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
-use PhpOffice\PhpSpreadsheet\Style\Font;
-use Carbon\Carbon;
 
 class PenggajianExport implements 
     FromCollection, 
     WithHeadings, 
     WithMapping, 
-    WithStyles,
-    WithColumnWidths,
+    WithStyles, 
+    WithColumnWidths, 
     WithTitle,
-    ShouldAutoSize,
     WithEvents
 {
     protected $bulan;
     protected $tahun;
     protected $posisi;
     protected $data;
-    protected $totalData = 0;
+    protected $totalData;
 
     public function __construct($bulan, $tahun, $posisi = null)
     {
@@ -70,46 +65,44 @@ class PenggajianExport implements
     }
 
     /**
-     * Define headings - 16 kolom (A-P)
+     * Define headings - 15 kolom (A-O) - Kolom J (Jumlah Iuran BPJS) dihapus
      */
     public function headings(): array
     {
         return [
-            'No',                       // A
-            'No Rekening BRI',          // B
-            'NIK',                      // C
-            'Nama',                     // D
-            'Bagian',                   // E
-            'Jumlah Penghasilan Kotor', // F
-            'BPJS Kesehatan',           // G
-            'BPJS JHT',                 // H
-            'BPJS JP',                  // I
-            'Jumlah Iuran BPJS',        // J
-            'THR',                      // K
-            'Jumlah Hari Kerja',        // L
-            'Satuan',                   // M (Gaji Harian)
-            'Lembur Hari Besar',        // N
-            'Upah Kotor Karyawan',      // O
-            'Upah yang diterima'        // P
+            'No',                           // A
+            'No Rekening BRI',              // B
+            'NIK',                          // C
+            'Nama',                         // D
+            'Bagian',                       // E
+            'Jumlah Penghasilan Kotor',     // F
+            'BPJS Kesehatan',               // G
+            'BPJS JHT',                     // H
+            'BPJS JP',                      // I
+            'THR',                          // J (sebelumnya K)
+            'Jumlah Hari Kerja',            // K (sebelumnya L)
+            'Satuan',                       // L (sebelumnya M) - Gaji Harian
+            'Lembur Hari Besar',            // M (sebelumnya N)
+            'Upah Kotor Karyawan',          // N (sebelumnya O)
+            'Upah yang diterima'            // O (sebelumnya P)
         ];
     }
 
     /**
-     * Map each row - 16 kolom (A-P)
+     * Map each row - 15 kolom (A-O)
      */
     public function map($penggajian): array
     {
         return [
-            '', // No akan diisi otomatis nanti
+            '',                                         // No akan diisi otomatis nanti
             $penggajian->no_rek_bri ?? '-',
-            $penggajian->nik,
+            $penggajian->nik,                           // NIK akan diformat di registerEvents
             $penggajian->nama,
             $this->getPosisiLabel($penggajian->posisi),
             $penggajian->jumlah_penghasilan_kotor,
             $penggajian->bpjs_kesehatan,
             $penggajian->bpjs_jht,
             $penggajian->bpjs_jp,
-            $penggajian->total_bpjs,
             $penggajian->uang_thr ?? 0,
             $penggajian->jumlah_hari_kerja,
             $penggajian->gaji_harian,
@@ -126,13 +119,13 @@ class PenggajianExport implements
     {
         $labels = [
             'jasa' => 'Jasa',
-            'supur' => 'Supir', // Perbaiki typo jika ada
+            'supur' => 'Supir',
             'supir' => 'Supir',
             'keamanan' => 'Keamanan',
             'cleaning_service' => 'Cleaning Service',
             'operator' => 'Operator'
         ];
-        
+
         return $labels[$posisi] ?? $posisi;
     }
 
@@ -146,16 +139,15 @@ class PenggajianExport implements
             5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
             9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
         ];
-        
+
         $namaBulan = $bulanNames[$this->bulan] ?? 'Bulan';
-        $startDataRow = 6; // Data dimulai dari row 6
-        $headerRow = 5; // Header tabel di row 5
+        $startDataRow = 6;
+        $headerRow = 5;
 
         // ========== HEADER INFORMASI PERUSAHAAN ==========
-        
         // Nama Perusahaan
         $sheet->setCellValue('A1', 'PT SURYA TAMADO MANDIRI');
-        $sheet->mergeCells('A1:P1');
+        $sheet->mergeCells('A1:O1');
         $sheet->getStyle('A1')->applyFromArray([
             'font' => [
                 'bold' => true,
@@ -170,7 +162,7 @@ class PenggajianExport implements
 
         // Judul Laporan
         $sheet->setCellValue('A2', 'LAPORAN PENGGAJIAN KARYAWAN');
-        $sheet->mergeCells('A2:P2');
+        $sheet->mergeCells('A2:O2');
         $sheet->getStyle('A2')->applyFromArray([
             'font' => [
                 'bold' => true,
@@ -188,9 +180,8 @@ class PenggajianExport implements
         if ($this->posisi) {
             $periodeText .= " | Posisi: " . strtoupper($this->posisi);
         }
-        
         $sheet->setCellValue('A3', $periodeText);
-        $sheet->mergeCells('A3:P3');
+        $sheet->mergeCells('A3:O3');
         $sheet->getStyle('A3')->applyFromArray([
             'font' => [
                 'size' => 12,
@@ -204,7 +195,7 @@ class PenggajianExport implements
 
         // Tanggal Cetak
         $sheet->setCellValue('A4', 'Tanggal Cetak: ' . now()->format('d/m/Y H:i:s'));
-        $sheet->mergeCells('A4:P4');
+        $sheet->mergeCells('A4:O4');
         $sheet->getStyle('A4')->applyFromArray([
             'font' => [
                 'size' => 10,
@@ -224,7 +215,7 @@ class PenggajianExport implements
         $sheet->getRowDimension(4)->setRowHeight(18);
 
         // ========== HEADER TABEL ==========
-        $sheet->getStyle("A{$headerRow}:P{$headerRow}")->applyFromArray([
+        $sheet->getStyle("A{$headerRow}:O{$headerRow}")->applyFromArray([
             'font' => [
                 'bold' => true,
                 'color' => ['rgb' => 'FFFFFF'],
@@ -233,7 +224,7 @@ class PenggajianExport implements
             ],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '4472C4'] // Biru Microsoft
+                'startColor' => ['rgb' => '4472C4']
             ],
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
@@ -251,7 +242,7 @@ class PenggajianExport implements
         $sheet->getRowDimension($headerRow)->setRowHeight(30);
 
         // Auto size semua kolom
-        foreach (range('A', 'P') as $column) {
+        foreach (range('A', 'O') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
 
@@ -259,27 +250,26 @@ class PenggajianExport implements
     }
 
     /**
-     * Set column widths (fallback jika auto size kurang)
+     * Set column widths
      */
     public function columnWidths(): array
     {
         return [
-            'A' => 6,   // No
-            'B' => 18,  // No Rek BRI
-            'C' => 18,  // NIK
-            'D' => 25,  // Nama
-            'E' => 15,  // Bagian
-            'F' => 22,  // Jml Penghasilan Kotor
-            'G' => 18,  // BPJS Kesehatan
-            'H' => 15,  // BPJS JHT
-            'I' => 15,  // BPJS JP
-            'J' => 20,  // Jml Iuran BPJS
-            'K' => 15,  // THR
-            'L' => 18,  // Jml Hari Kerja
-            'M' => 15,  // Satuan
-            'N' => 20,  // Lembur Hari Besar
-            'O' => 22,  // Upah Kotor Karyawan
-            'P' => 22   // Upah yang diterima
+            'A' => 6,       // No
+            'B' => 18,      // No Rek BRI
+            'C' => 20,      // NIK (diperlebar untuk menampung angka panjang)
+            'D' => 25,      // Nama
+            'E' => 15,      // Bagian
+            'F' => 22,      // Jml Penghasilan Kotor
+            'G' => 18,      // BPJS Kesehatan
+            'H' => 15,      // BPJS JHT
+            'I' => 15,      // BPJS JP
+            'J' => 15,      // THR
+            'K' => 18,      // Jml Hari Kerja
+            'L' => 15,      // Satuan
+            'M' => 20,      // Lembur Hari Besar
+            'N' => 22,      // Upah Kotor Karyawan
+            'O' => 22       // Upah yang diterima
         ];
     }
 
@@ -295,11 +285,11 @@ class PenggajianExport implements
         ];
 
         $namaBulan = $bulanNames[$this->bulan] ?? 'Bulan';
-        
+
         if ($this->posisi) {
             return "Penggajian {$namaBulan} {$this->tahun} - " . ucfirst($this->posisi);
         }
-        
+
         return "Penggajian {$namaBulan} {$this->tahun}";
     }
 
@@ -313,45 +303,51 @@ class PenggajianExport implements
                 $sheet = $event->sheet->getDelegate();
                 $startDataRow = 6;
                 $headerRow = 5;
-                
+
                 // Tulis header
                 $headers = $this->headings();
                 $sheet->fromArray($headers, null, "A{$headerRow}");
-                
+
                 // Tulis data jika ada
                 if ($this->totalData > 0) {
                     $row = $startDataRow;
-                    
                     foreach ($this->data as $index => $penggajian) {
                         $no = $index + 1;
-                        
+
                         // Tulis data per kolom
                         $sheet->setCellValue("A{$row}", $no);
-                        $sheet->setCellValue("B{$row}", $penggajian->no_rek_bri ?? '-');
-                        $sheet->setCellValue("C{$row}", $penggajian->nik);
+                        
+                        // *** FORMAT NO REKENING BRI SEBAGAI TEXT AGAR TIDAK JADI NOTASI ILMIAH ***
+                        $noRekBri = $penggajian->no_rek_bri ?? '-';
+                        if ($noRekBri !== '-') {
+                            $sheet->setCellValueExplicit("B{$row}", $noRekBri, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                        } else {
+                            $sheet->setCellValue("B{$row}", $noRekBri);
+                        }
+                        
+                        // *** FORMAT NIK SEBAGAI TEXT AGAR TIDAK JADI NOTASI ILMIAH ***
+                        $sheet->setCellValueExplicit("C{$row}", $penggajian->nik, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                        
                         $sheet->setCellValue("D{$row}", $penggajian->nama);
                         $sheet->setCellValue("E{$row}", $this->getPosisiLabel($penggajian->posisi));
                         $sheet->setCellValue("F{$row}", $penggajian->jumlah_penghasilan_kotor);
                         $sheet->setCellValue("G{$row}", $penggajian->bpjs_kesehatan);
                         $sheet->setCellValue("H{$row}", $penggajian->bpjs_jht);
                         $sheet->setCellValue("I{$row}", $penggajian->bpjs_jp);
-                        $sheet->setCellValue("J{$row}", $penggajian->total_bpjs);
-                        $sheet->setCellValue("K{$row}", $penggajian->uang_thr ?? 0);
-                        $sheet->setCellValue("L{$row}", $penggajian->jumlah_hari_kerja);
-                        $sheet->setCellValue("M{$row}", $penggajian->gaji_harian);
-                        $sheet->setCellValue("N{$row}", $penggajian->jumlah_lembur);
-                        $sheet->setCellValue("O{$row}", $penggajian->upah_kotor_karyawan);
-                        $sheet->setCellValue("P{$row}", $penggajian->upah_diterima);
-                        
+                        $sheet->setCellValue("J{$row}", $penggajian->uang_thr ?? 0);
+                        $sheet->setCellValue("K{$row}", $penggajian->jumlah_hari_kerja);
+                        $sheet->setCellValue("L{$row}", $penggajian->gaji_harian);
+                        $sheet->setCellValue("M{$row}", $penggajian->jumlah_lembur);
+                        $sheet->setCellValue("N{$row}", $penggajian->upah_kotor_karyawan);
+                        $sheet->setCellValue("O{$row}", $penggajian->upah_diterima);
+
                         $row++;
                     }
-                    
+
                     $endDataRow = $row - 1;
-                    
+
                     // ========== APPLY STYLES TO DATA ==========
-                    
-                    // Style untuk data rows
-                    $sheet->getStyle("A{$startDataRow}:P{$endDataRow}")->applyFromArray([
+                    $sheet->getStyle("A{$startDataRow}:O{$endDataRow}")->applyFromArray([
                         'borders' => [
                             'allBorders' => [
                                 'borderStyle' => Border::BORDER_THIN,
@@ -366,7 +362,7 @@ class PenggajianExport implements
                     // Zebra striping
                     for ($r = $startDataRow; $r <= $endDataRow; $r++) {
                         if ($r % 2 == 0) {
-                            $sheet->getStyle("A{$r}:P{$r}")->applyFromArray([
+                            $sheet->getStyle("A{$r}:O{$r}")->applyFromArray([
                                 'fill' => [
                                     'fillType' => Fill::FILL_SOLID,
                                     'startColor' => ['rgb' => 'F2F2F2']
@@ -376,7 +372,7 @@ class PenggajianExport implements
                     }
 
                     // ========== NUMBER FORMATTING ==========
-                    $currencyColumns = ['F', 'G', 'H', 'I', 'J', 'M', 'N', 'O', 'P'];
+                    $currencyColumns = ['F', 'G', 'H', 'I', 'L', 'M', 'N', 'O'];
                     foreach ($currencyColumns as $col) {
                         $sheet->getStyle("{$col}{$startDataRow}:{$col}{$endDataRow}")
                             ->getNumberFormat()
@@ -384,7 +380,7 @@ class PenggajianExport implements
                     }
 
                     // Kolom jumlah hari kerja
-                    $sheet->getStyle("L{$startDataRow}:L{$endDataRow}")
+                    $sheet->getStyle("K{$startDataRow}:K{$endDataRow}")
                         ->getNumberFormat()
                         ->setFormatCode('0.0');
 
@@ -400,24 +396,23 @@ class PenggajianExport implements
                             ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
                     }
 
-                    $sheet->getStyle("L{$startDataRow}:L{$endDataRow}")
+                    $sheet->getStyle("K{$startDataRow}:K{$endDataRow}")
                         ->getAlignment()
                         ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
                     // ========== TOTAL ROW ==========
                     $totalRow = $endDataRow + 1;
-                    
+
                     // Label TOTAL
                     $sheet->setCellValue("A{$totalRow}", 'TOTAL');
                     $sheet->mergeCells("A{$totalRow}:E{$totalRow}");
                     $sheet->getStyle("A{$totalRow}")->getAlignment()
                         ->setHorizontal(Alignment::HORIZONTAL_CENTER);
-                    
+
                     // Formulas untuk total
                     $sheet->setCellValue("F{$totalRow}", "=SUM(F{$startDataRow}:F{$endDataRow})");
-                    $sheet->setCellValue("J{$totalRow}", "=SUM(J{$startDataRow}:J{$endDataRow})");
+                    $sheet->setCellValue("N{$totalRow}", "=SUM(N{$startDataRow}:N{$endDataRow})");
                     $sheet->setCellValue("O{$totalRow}", "=SUM(O{$startDataRow}:O{$endDataRow})");
-                    $sheet->setCellValue("P{$totalRow}", "=SUM(P{$startDataRow}:P{$endDataRow})");
 
                     // Style untuk TOTAL row
                     $totalRowStyle = [
@@ -440,14 +435,13 @@ class PenggajianExport implements
                         ]
                     ];
 
-                    $sheet->getStyle("A{$totalRow}:P{$totalRow}")->applyFromArray($totalRowStyle);
+                    $sheet->getStyle("A{$totalRow}:O{$totalRow}")->applyFromArray($totalRowStyle);
 
                     // Format angka untuk TOTAL row
                     foreach ($currencyColumns as $col) {
                         $sheet->getStyle("{$col}{$totalRow}")
                             ->getNumberFormat()
                             ->setFormatCode('#,##0');
-                        
                         $sheet->getStyle("{$col}{$totalRow}")
                             ->getAlignment()
                             ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
@@ -455,6 +449,7 @@ class PenggajianExport implements
 
                     // ========== RATA-RATA ROW ==========
                     $avgRow = $totalRow + 1;
+
                     $sheet->setCellValue("A{$avgRow}", 'RATA-RATA');
                     $sheet->mergeCells("A{$avgRow}:E{$avgRow}");
                     $sheet->getStyle("A{$avgRow}")->getAlignment()
@@ -462,7 +457,7 @@ class PenggajianExport implements
 
                     if ($this->totalData > 0) {
                         $sheet->setCellValue("F{$avgRow}", "=F{$totalRow}/{$this->totalData}");
-                        $sheet->setCellValue("P{$avgRow}", "=P{$totalRow}/{$this->totalData}");
+                        $sheet->setCellValue("O{$avgRow}", "=O{$totalRow}/{$this->totalData}");
                     }
 
                     // Style untuk RATA-RATA row
@@ -484,22 +479,22 @@ class PenggajianExport implements
                         ]
                     ];
 
-                    $sheet->getStyle("A{$avgRow}:P{$avgRow}")->applyFromArray($avgRowStyle);
+                    $sheet->getStyle("A{$avgRow}:O{$avgRow}")->applyFromArray($avgRowStyle);
 
                     // Format angka untuk RATA-RATA
-                    foreach (['F', 'P'] as $col) {
+                    foreach (['F', 'O'] as $col) {
                         $sheet->getStyle("{$col}{$avgRow}")
                             ->getNumberFormat()
                             ->setFormatCode('#,##0');
-                        
                         $sheet->getStyle("{$col}{$avgRow}")
                             ->getAlignment()
                             ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
                     }
+
                 } else {
                     // Jika tidak ada data
                     $sheet->setCellValue("A{$startDataRow}", 'TIDAK ADA DATA');
-                    $sheet->mergeCells("A{$startDataRow}:P{$startDataRow}");
+                    $sheet->mergeCells("A{$startDataRow}:O{$startDataRow}");
                     $sheet->getStyle("A{$startDataRow}")->applyFromArray([
                         'font' => [
                             'bold' => true,
@@ -516,36 +511,20 @@ class PenggajianExport implements
                         ]
                     ]);
                 }
-                
+
                 // ========== PAGE SETUP ==========
-                
-                // Set print area
-                $sheet->getPageSetup()->setPrintArea('A1:P100');
-                
-                // Set orientation to landscape
+                $sheet->getPageSetup()->setPrintArea('A1:O100');
                 $sheet->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE);
-                
-                // Set paper size to A4
                 $sheet->getPageSetup()->setPaperSize(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_A4);
-                
-                // Set margins
                 $sheet->getPageMargins()->setTop(0.5);
                 $sheet->getPageMargins()->setRight(0.5);
                 $sheet->getPageMargins()->setLeft(0.5);
                 $sheet->getPageMargins()->setBottom(0.5);
-                
-                // Center horizontally
                 $sheet->getPageSetup()->setHorizontalCentered(true);
-                
-                // Set fit to page
                 $sheet->getPageSetup()->setFitToWidth(1);
                 $sheet->getPageSetup()->setFitToHeight(0);
-                
-                // Add header for print
                 $sheet->getHeaderFooter()
                     ->setOddHeader('&C&"Arial,Bold"PT SURYA TAMADO MANDIRI - Laporan Penggajian');
-                
-                // Add footer with page number
                 $sheet->getHeaderFooter()
                     ->setOddFooter('&L&D &T&C&"Arial"Page &P of &N&R');
             },
