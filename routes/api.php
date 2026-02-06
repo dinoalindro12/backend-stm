@@ -54,6 +54,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('karyawan/{id}', [KaryawanController::class, 'show']);
     Route::put('karyawan/{id}', [KaryawanController::class, 'update']);
     Route::delete('karyawan/{id}', [KaryawanController::class, 'destroy']);
+    Route::get('karyawan/download-excel', [KaryawanController::class, 'downloadExcel']);
+
+    // Download Kartu PDF
+    Route::get('karyawan/{id}/download-kartu', [KaryawanController::class, 'downloadKartuPdf']);
+    Route::get('karyawan/{id}/preview-kartu', [KaryawanController::class, 'previewKartuPdf']);
+    Route::post('karyawan/bulk-download-kartu', [KaryawanController::class, 'bulkDownloadKartuPdf']);
 });
 // manajemen kontak
 Route::middleware('auth:sanctum')->prefix('kontak')->name('api.kontak.')->group(function () {
@@ -116,4 +122,13 @@ Route::middleware('auth:sanctum')->prefix('dashboard')->group(function () {
     Route::get('/summary', [DashboardController::class, 'getSummary']);
     Route::get('/gaji-chart', [DashboardController::class, 'getGajiChart']);
     Route::get('/pelamar-chart', [DashboardController::class, 'getPelamarChart']);
+});
+Route::middleware('auth:sanctum')->prefix('karyawan')->group(function () {
+// Download Excel
+    Route::get('karyawan/download-excel', [KaryawanController::class, 'downloadExcel']);
+
+    // Download Kartu PDF
+    Route::get('karyawan/{id}/download-kartu', [KaryawanController::class, 'downloadKartuPdf']);
+    Route::get('karyawan/{id}/preview-kartu', [KaryawanController::class, 'previewKartuPdf']);
+    Route::post('karyawan/bulk-download-kartu', [KaryawanController::class, 'bulkDownloadKartuPdf']);
 });

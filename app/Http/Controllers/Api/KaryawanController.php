@@ -2,14 +2,21 @@
 
 namespace App\Http\Controllers\Api;
 
+
 use App\Models\Karyawan;
-use App\Http\Controllers\Controller;
-use App\Http\Resources\KaryawanResource;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use App\Exports\KaryawanExport;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\Controller;
+use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Facades\Storage;
+use App\Http\Resources\KaryawanResource;
+use Illuminate\Support\Facades\Validator;
+
+
 
 class KaryawanController extends Controller
 {
@@ -551,6 +558,144 @@ class KaryawanController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menyiapkan data export',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+    /**
+     * Download Excel - Export karyawan data
+     */
+    public function downloadExcel(Request $request)
+    {
+        try {
+            $filters = [
+                'status_aktif' => $request->status_aktif,
+                'posisi' => $request->posisi,
+                'search' => $request->search,
+            ];
+
+            $fileName = 'Data_Karyawan_' . date('Y-m-d_His') . '.xlsx';
+
+            return Excel::download(new KaryawanExport($filters), $fileName);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengunduh data Excel',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Download PDF - Kartu karyawan
+     */
+    public function downloadKartuPdf($id)
+{
+    try {
+        $karyawan = Karyawan::find($id);
+
+        if (!$karyawan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data karyawan tidak ditemukan'
+            ], 404);
+        }
+
+        $pdf = Pdf::loadView('pdf.kartu-karyawan', compact('karyawan'));
+        
+        // Paper size yang pas untuk kartu (A6 landscape = 148mm x 105mm)
+        $pdf->setPaper('a6', 'landscape');
+        
+        // Atau gunakan custom size yang lebih kecil
+        // $pdf->setPaper([0, 0, 340, 240]); // dalam points
+        
+        $pdf->setOptions([
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled' => true,
+            'defaultFont' => 'DejaVu Sans',
+            'dpi' => 150,
+            'defaultPaperSize' => 'a6',
+            'isPhpEnabled' => true
+        ]);
+
+        $fileName = 'Kartu_' . str_replace(' ', '_', $karyawan->nama_lengkap) . '_' . date('Ymd') . '.pdf';
+
+        return $pdf->download($fileName);
+
+    } catch (\Exception $e) {
+        Log::error('Error download kartu PDF: ' . $e->getMessage());
+        Log::error($e->getTraceAsString());
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mengunduh kartu karyawan',
+            'error' => env('APP_DEBUG') ? $e->getMessage() : null
+        ], 500);
+    }
+}
+
+    /**
+     * Bulk download kartu PDF untuk multiple karyawan
+     */
+    public function bulkDownloadKartuPdf(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'ids' => 'required|array|min:1',
+                'ids.*' => 'exists:karyawans,id'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validasi gagal',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $karyawans = Karyawan::whereIn('id', $request->ids)->get();
+
+            $pdf = Pdf::loadView('pdf.kartu-karyawan-bulk', compact('karyawans'))
+                ->setPaper([0, 0, 242.65, 153.07], 'landscape');
+
+            $fileName = 'Kartu_Karyawan_Bulk_' . date('Ymd_His') . '.pdf';
+
+            return $pdf->download($fileName);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengunduh kartu karyawan',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Preview kartu karyawan di browser
+     */
+    public function previewKartuPdf($id)
+    {
+        try {
+            $karyawan = Karyawan::find($id);
+
+            if (!$karyawan) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data karyawan tidak ditemukan'
+                ], 404);
+            }
+
+            $pdf = Pdf::loadView('pdf.kartu-karyawan', compact('karyawan'))
+                ->setPaper([0, 0, 242.65, 153.07], 'landscape');
+
+            return $pdf->stream();
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menampilkan preview kartu',
                 'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }

@@ -26,6 +26,14 @@ class Karyawan extends Model
         'tanggal_keluar',
         'status_aktif',
     ];
+    protected $casts = [
+        'tanggal_masuk' => 'date',
+        'tanggal_keluar' => 'date',
+        'status_aktif' => 'boolean',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'deleted_at' => 'datetime',
+    ];
 
     /**
      * image
