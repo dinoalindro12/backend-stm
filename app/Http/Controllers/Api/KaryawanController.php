@@ -199,18 +199,18 @@ class KaryawanController extends Controller
             }
 
             $validator = Validator::make($request->all(), [
-                'nomor_induk'   => 'sometimes|required|unique:karyawans,nomor_induk,' . $karyawan->id . '|string|max:12',
-                'nik'           => 'sometimes|required|unique:karyawans,nik,' . $karyawan->id . '|string|max:20',
-                'no_rek_bri'    => 'sometimes|required|unique:karyawans,no_rek_bri,' . $karyawan->id . '|string|max:30',
-                'nama_lengkap'  => 'sometimes|required|string|max:100',
-                'posisi'        => 'sometimes|required|string|in:jasa,supir,keamanan,cleaning_service,operator',
+                'nomor_induk'   => 'nullable|required|unique:karyawans,nomor_induk,' . $karyawan->id . '|string|max:12',
+                'nik'           => 'nullable|required|unique:karyawans,nik,' . $karyawan->id . '|string|max:20',
+                'no_rek_bri'    => 'nullable|required|unique:karyawans,no_rek_bri,' . $karyawan->id . '|string|max:30',
+                'nama_lengkap'  => 'nullable|required|string|max:100',
+                'posisi'        => 'nullable|required|string|in:jasa,supir,keamanan,cleaning_service,operator',
                 'email'         => 'nullable|email|unique:karyawans,email,' . $karyawan->id . '|max:100',
-                'alamat'        => 'sometimes|required|string',
+                'alamat'        => 'nullable|required|string',
                 'no_wa'         => 'nullable|string|max:15',
                 'image'         => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
-                'tanggal_masuk' => 'sometimes|required|date',
+                'tanggal_masuk' => 'nullable|required|date',
                 'tanggal_keluar'=> 'nullable|date|after_or_equal:tanggal_masuk',
-                'status_aktif'  => 'sometimes|required|boolean',
+                'status_aktif'  => 'nullable|required|boolean',
             ], [
                 'nomor_induk.unique' => 'Nomor induk sudah terdaftar',
                 'nik.unique' => 'NIK sudah terdaftar',
