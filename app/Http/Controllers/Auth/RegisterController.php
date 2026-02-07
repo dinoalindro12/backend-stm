@@ -18,7 +18,7 @@ class RegisterController extends Controller
         $userCount = User::count();
         
         // Jika sudah mencapai 4 akun, tolak registrasi
-        if ($userCount >= 10) {
+        if ($userCount >= 5) {
             return response()->json([
                 'message' => 'Maaf, batas maksimal registrasi (4 akun) telah tercapai.'
             ], 403); // 403 Forbidden
