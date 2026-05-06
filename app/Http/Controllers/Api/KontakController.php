@@ -13,15 +13,26 @@ use Illuminate\Support\Facades\Validator;
 class KontakController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Tampilkan semua pesan kontak dengan filter opsional.
      */
-    public function index(): JsonResponse|AnonymousResourceCollection
+    public function index(Request $request): JsonResponse|AnonymousResourceCollection
     {
         try {
-            $kontak = Kontak::latest()->paginate(10);
-            
+            $query = Kontak::with('admin')->latest();
+
+            // Filter berdasarkan status
+            if ($request->has('status_dibaca')) {
+                $query->where('status_dibaca', $request->status_dibaca);
+            }
+
+            $kontak = $query->paginate($request->per_page ?? 10);
+
             return KontakResource::collection($kontak)->additional([
-                'message' => 'Data kontak berhasil diambil'
+                'message' => 'Data kontak berhasil diambil',
+                'summary' => [
+                    'total_pending' => Kontak::pending()->count(),
+                    'total_dibaca' => Kontak::dibaca()->count(),
+                ]
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -33,16 +44,17 @@ class KontakController extends Controller
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Simpan pesan kontak baru dari publik.
      */
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'nama' => 'required|string|max:255',
             'email' => 'required|email|max:255',
+            'no_wa' => 'nullable|string|regex:/^[0-9]+$/|max:15',
             'perusahaan' => 'nullable|string|max:255',
             'subjek' => 'required|string|max:255',
-            'isi' => 'required|string',
+            'isi' => 'required|string',          
         ]);
 
         if ($validator->fails()) {
@@ -57,17 +69,18 @@ class KontakController extends Controller
             $kontak = Kontak::create([
                 'nama' => $request->nama,
                 'email' => $request->email,
+                'no_wa'=>  $request->no_wa,
                 'perusahaan' => $request->perusahaan,
                 'subjek' => $request->subjek,
                 'isi' => $request->isi,
-                'status_dibaca' => 'pending'
+                'status_dibaca' => 'pending',
             ]);
 
             return (new KontakResource($kontak))
                 ->additional(['message' => 'Pesan berhasil dikirim'])
                 ->response()
                 ->setStatusCode(201);
-                
+
         } catch (\Illuminate\Database\QueryException $e) {
             return response()->json([
                 'success' => false,
@@ -84,15 +97,19 @@ class KontakController extends Controller
     }
 
     /**
-     * Display the specified resource.
+     * Tampilkan detail pesan — otomatis tandai dibaca oleh admin yang login.
      */
-    public function show(string $id): JsonResponse|KontakResource
+    public function show(Request $request, string $id): JsonResponse|KontakResource
     {
         try {
-            $kontak = Kontak::findOrFail($id);
+            $kontak = Kontak::with('admin')->findOrFail($id);
 
-            return (new KontakResource($kontak))
+            // Otomatis tandai dibaca saat admin membuka pesan
+            $kontak->tandaiDibaca($request->user()->id);
+
+            return (new KontakResource($kontak->fresh('admin')))
                 ->additional(['message' => 'Data kontak berhasil diambil']);
+
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
@@ -108,7 +125,7 @@ class KontakController extends Controller
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update data kontak (hanya field teks, bukan status).
      */
     public function update(Request $request, string $id): JsonResponse|KontakResource
     {
@@ -116,12 +133,12 @@ class KontakController extends Controller
             $kontak = Kontak::findOrFail($id);
 
             $validator = Validator::make($request->all(), [
-                'nama' => 'required|string|max:255',
-                'email' => 'required|email|max:255',
+                'nama' => 'sometimes|required|string|max:255',
+                'email' => 'sometimes|required|email|max:255',
+                'no_wa' => 'sometimes|required|regex:/^[0-9]+$/|max:15',
                 'perusahaan' => 'nullable|string|max:255',
-                'subjek' => 'required|string|max:255',
-                'isi' => 'required|string',
-                'status_dibaca' => 'nullable|in:pending,dibaca',
+                'subjek' => 'sometimes|required|string|max:255',
+                'isi' => 'sometimes|required|string',
             ]);
 
             if ($validator->fails()) {
@@ -132,18 +149,11 @@ class KontakController extends Controller
                 ], 422);
             }
 
-            $kontak->update($request->only([
-                'nama',
-                'email',
-                'perusahaan',
-                'subjek',
-                'isi',
-                'status_dibaca'
-            ]));
+            $kontak->update($request->only(['nama', 'email','no_wa', 'perusahaan', 'subjek', 'isi']));
 
-            return (new KontakResource($kontak))
+            return (new KontakResource($kontak->fresh('admin')))
                 ->additional(['message' => 'Data kontak berhasil diperbarui']);
-                
+
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
@@ -165,7 +175,7 @@ class KontakController extends Controller
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Hapus pesan kontak (soft delete).
      */
     public function destroy(string $id): JsonResponse
     {
@@ -177,7 +187,7 @@ class KontakController extends Controller
                 'success' => true,
                 'message' => 'Data kontak berhasil dihapus'
             ]);
-                
+
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
@@ -199,7 +209,7 @@ class KontakController extends Controller
     }
 
     /**
-     * Update status dibaca
+     * Tandai status dibaca secara manual — mencatat admin yang melakukan aksi.
      */
     public function updateStatus(Request $request, string $id): JsonResponse|KontakResource
     {
@@ -218,12 +228,25 @@ class KontakController extends Controller
                 ], 422);
             }
 
-            $kontak->update([
-                'status_dibaca' => $request->status_dibaca,
-            ]);
+            if ($request->status_dibaca === 'dibaca') {
+                // Catat admin yang menandai dan waktu dibaca
+                $kontak->update([
+                    'status_dibaca' => 'dibaca',
+                    'dibaca_pada' => now(),
+                    'admin_id' => $request->user()->id,
+                ]);
+            } else {
+                // Reset ke pending — hapus catatan pembaca
+                $kontak->update([
+                    'status_dibaca' => 'pending',
+                    'dibaca_pada' => null,
+                    'admin_id' => null,
+                ]);
+            }
 
-            return (new KontakResource($kontak))
+            return (new KontakResource($kontak->fresh('admin')))
                 ->additional(['message' => 'Status kontak berhasil diperbarui']);
+
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,

@@ -2,319 +2,265 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exports\TagihanPerusahaanExport;
 use App\Http\Controllers\Controller;
 use App\Models\TagihanPerusahaan;
-use App\Exports\TagihanPerusahaanExport;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Maatwebsite\Excel\Facades\Excel;
 
 class ExportTagihanPerusahaanController extends Controller
 {
     /**
-     * PREVIEW data sebelum export
+     * Preview data sebelum export
      */
     public function previewExport(Request $request)
     {
-        Log::info('Preview export tagihan dipanggil', $request->all());
-        
         try {
             $validator = Validator::make($request->all(), [
-                'periode_awal' => 'required|date',
-                'periode_akhir' => 'required|date|after_or_equal:periode_awal',
-                'posisi' => 'nullable|in:jasa,supir,keamanan,cleaning_service,operator',
+                'tagihan_bulan' => 'required|date',
+                'posisi'        => 'nullable|in:jasa,supir,keamanan,cleaning_service,operator',
             ]);
-            
+
             if ($validator->fails()) {
-                Log::error('Validasi gagal', $validator->errors()->toArray());
                 return response()->json([
                     'success' => false,
                     'message' => 'Validasi gagal',
-                    'errors' => $validator->errors()
+                    'errors'  => $validator->errors()
                 ], 422);
             }
-            
-            $periodeAwal = $request->periode_awal;
-            $periodeAkhir = $request->periode_akhir;
-            $posisi = $request->posisi;
-            
-            Log::info("Mencari data untuk periode: {$periodeAwal} - {$periodeAkhir}, posisi: {$posisi}");
-            
-            // Query data
+
+            $tagihanBulan = Carbon::parse($request->tagihan_bulan)->startOfMonth();
+            $posisi       = $request->posisi;
+
             $query = TagihanPerusahaan::with('karyawan')
-                ->where('periode_awal', $periodeAwal)
-                ->where('periode_akhir', $periodeAkhir);
-            
+                ->whereYear('tagihan_bulan', $tagihanBulan->year)
+                ->whereMonth('tagihan_bulan', $tagihanBulan->month);
+
             if ($posisi) {
-                $query->where('posisi', $posisi);
+                $query->whereHas('karyawan', fn($q) => $q->where('posisi', $posisi));
             }
-            
+
             $totalData = $query->count();
-            Log::info("Total data ditemukan: {$totalData}");
-            
+
             if ($totalData === 0) {
-                // Tampilkan periode yang tersedia
-                $availablePeriodes = TagihanPerusahaan::selectRaw('
-                    DISTINCT periode_awal, periode_akhir
-                ')->orderBy('periode_awal', 'desc')->limit(5)->get();
-                
-                $periodesInfo = $availablePeriodes->map(function($item) {
-                    return date('d/m/Y', strtotime($item->periode_awal)) . ' - ' . date('d/m/Y', strtotime($item->periode_akhir));
-                })->toArray();
-                
-                Log::info("Periode tersedia: " . implode(', ', $periodesInfo));
-                
+                $availableMonths = TagihanPerusahaan::select('tagihan_bulan')
+                    ->distinct()
+                    ->orderBy('tagihan_bulan', 'desc')
+                    ->limit(10)
+                    ->get()
+                    ->map(function ($item) {
+                        $bulan = Carbon::parse($item->tagihan_bulan);
+                        return [
+                            'value' => $bulan->format('Y-m-d'),
+                            'label' => $this->getBulanIndonesia($bulan->format('n')) . ' ' . $bulan->format('Y'),
+                        ];
+                    })
+                    ->unique('label')
+                    ->values();
+
                 return response()->json([
-                    'success' => false,
-                    'message' => "Tidak ada data tagihan untuk periode {$periodeAwal} - {$periodeAkhir}",
+                    'success'    => false,
+                    'message'    => 'Tidak ada data tagihan untuk bulan ' .
+                                   $this->getBulanIndonesia($tagihanBulan->format('n')) . ' ' . $tagihanBulan->format('Y'),
                     'suggestion' => [
-                        'available_periodes' => $periodesInfo,
+                        'available_months'      => $availableMonths,
                         'total_data_in_database' => TagihanPerusahaan::count(),
-                        'hint' => 'Gunakan API GET /api/tagihan-perusahaan/export/available-periodes'
                     ]
                 ], 404);
             }
-            
-            // Ambil 3 data sample
-            $sampleData = $query->orderBy('nama')->limit(3)->get();
-            Log::info("Sample data ditemukan: {$sampleData->count()} records");
-            
-            // Format sample
-            $formattedSample = $sampleData->map(function($item) {
+
+            // Sample 3 data
+            $sampleData = $query->limit(3)->get()->map(function ($item) {
+                $k = $item->karyawan;
                 return [
-                    'no_induk' => $item->no_induk,
-                    'nik' => $item->nik,
-                    'nama' => $item->nama,
-                    'posisi' => $item->posisi,
-                    'jumlah_gaji_diterima' => 'Rp ' . number_format($item->jumlah_gaji_diterima ?? 0, 0, ',', '.'),
-                    'jumlah_iuran' => 'Rp ' . number_format($item->jumlah_iuran ?? 0, 0, ',', '.'),
-                    'upa_pekerja' => 'Rp ' . number_format($item->upa_yang_diterima_pekerja ?? 0, 0, ',', '.'),
-                    'total_diterima' => 'Rp ' . number_format($item->total_diterima ?? 0, 0, ',', '.'),
+                    'no_induk'              => optional($k)->nomor_induk ?? '-',
+                    'nik'                   => optional($k)->nik ?? '-',
+                    'nama'                  => optional($k)->nama_lengkap ?? '-',
+                    'posisi'                => optional($k)->posisi ?? '-',
+                    'jumlah_hari_kerja'     => $item->jumlah_hari_kerja,
+                    'gaji_harian'           => 'Rp ' . number_format($item->gaji_harian ?? 0, 0, ',', '.'),
+                    'upah_diterima_pekerja' => 'Rp ' . number_format($item->upah_diterima_pekerja ?? 0, 0, ',', '.'),
+                    'upah_total'            => 'Rp ' . number_format($item->upah_total ?? 0, 0, ',', '.'),
                 ];
             });
-            
+
+            // Summary
+            $summary = TagihanPerusahaan::whereYear('tagihan_bulan', $tagihanBulan->year)
+                ->whereMonth('tagihan_bulan', $tagihanBulan->month)
+                ->when($posisi, fn($q) => $q->whereHas('karyawan', fn($k) => $k->where('posisi', $posisi)))
+                ->select(
+                    DB::raw('SUM(upah_diterima_pekerja) as total_upah_diterima'),
+                    DB::raw('SUM(upah_total) as total_tagihan'),
+                    DB::raw('SUM(bpjs_kesehatan + jkk + jkm + jht + jp) as total_bpjs')
+                )->first();
+
             return response()->json([
                 'success' => true,
                 'message' => 'Preview export berhasil',
-                'data' => [
+                'data'    => [
                     'periode' => [
-                        'awal' => $periodeAwal,
-                        'akhir' => $periodeAkhir,
-                        'awal_formatted' => date('d/m/Y', strtotime($periodeAwal)),
-                        'akhir_formatted' => date('d/m/Y', strtotime($periodeAkhir)),
-                        'posisi' => $posisi ?: 'Semua'
+                        'bulan'           => $tagihanBulan->format('n'),
+                        'tahun'           => $tagihanBulan->format('Y'),
+                        'bulan_formatted' => $this->getBulanIndonesia($tagihanBulan->format('n')) . ' ' . $tagihanBulan->format('Y'),
+                        'posisi'          => $posisi ?: 'Semua',
                     ],
                     'summary' => [
-                        'total_data' => $totalData,
-                        'total_tagihan' => 'Rp ' . number_format($query->sum('total_diterima'), 0, ',', '.'),
-                        'total_upa_pekerja' => 'Rp ' . number_format($query->sum('upa_yang_diterima_pekerja'), 0, ',', '.'),
-                        'total_iuran' => 'Rp ' . number_format($query->sum('jumlah_iuran'), 0, ',', '.'),
+                        'total_data'            => $totalData,
+                        'total_tagihan'         => 'Rp ' . number_format($summary->total_tagihan ?? 0, 0, ',', '.'),
+                        'total_upah_diterima'   => 'Rp ' . number_format($summary->total_upah_diterima ?? 0, 0, ',', '.'),
+                        'total_bpjs'            => 'Rp ' . number_format($summary->total_bpjs ?? 0, 0, ',', '.'),
                     ],
-                    'sample_data' => $formattedSample,
+                    'sample_data'   => $sampleData,
                     'download_info' => [
-                        'filename' => $this->generateFilename($periodeAwal, $periodeAkhir, $posisi),
-                        'total_rows' => $totalData,
-                        'estimated_size_kb' => round($totalData * 0.8, 2)
-                    ]
+                        'filename'          => $this->generateFilename($tagihanBulan, $posisi),
+                        'total_rows'        => $totalData,
+                        'estimated_size_kb' => round($totalData * 0.8, 2),
+                    ],
                 ]
             ]);
-            
+
         } catch (\Exception $e) {
-            Log::error('Error preview export: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+            Log::error('Error preview export tagihan: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Terjadi kesalahan sistem',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+                'error'   => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
     }
-    
+
     /**
-     * EXPORT Excel
+     * Export ke Excel
      */
     public function exportExcel(Request $request)
     {
-        Log::info('Export Excel tagihan dipanggil', $request->all());
-        
         try {
             $validator = Validator::make($request->all(), [
-                'periode_awal' => 'required|date',
-                'periode_akhir' => 'required|date|after_or_equal:periode_awal',
-                'posisi' => 'nullable|in:jasa,supir,keamanan,cleaning_service,operator',
+                'tagihan_bulan' => 'required|date',
+                'posisi'        => 'nullable|in:jasa,supir,keamanan,cleaning_service,operator',
             ]);
-            
+
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Validasi gagal',
-                    'errors' => $validator->errors()
+                    'errors'  => $validator->errors()
                 ], 422);
             }
-            
-            $periodeAwal = $request->periode_awal;
-            $periodeAkhir = $request->periode_akhir;
-            $posisi = $request->posisi;
-            
-            // Cek apakah ada data
-            $query = TagihanPerusahaan::where('periode_awal', $periodeAwal)
-                ->where('periode_akhir', $periodeAkhir);
-            
+
+            $tagihanBulan = Carbon::parse($request->tagihan_bulan)->startOfMonth();
+            $posisi       = $request->posisi;
+
+            // Cek ketersediaan data
+            $query = TagihanPerusahaan::whereYear('tagihan_bulan', $tagihanBulan->year)
+                ->whereMonth('tagihan_bulan', $tagihanBulan->month);
+
             if ($posisi) {
-                $query->where('posisi', $posisi);
+                $query->whereHas('karyawan', fn($q) => $q->where('posisi', $posisi));
             }
-            
+
             $totalData = $query->count();
-            
+
             if ($totalData === 0) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Tidak ada data tagihan untuk periode {$periodeAwal} - {$periodeAkhir}"
+                    'message' => 'Tidak ada data tagihan untuk bulan ' .
+                                 $this->getBulanIndonesia($tagihanBulan->format('n')) . ' ' . $tagihanBulan->format('Y'),
                 ], 404);
             }
-            
-            $filename = $this->generateFilename($periodeAwal, $periodeAkhir, $posisi);
-            
-            Log::info("Exporting {$totalData} records to {$filename}");
-            
+
+            $filename = $this->generateFilename($tagihanBulan, $posisi);
+
+            Log::info("Export tagihan: {$totalData} records → {$filename}");
+
             return Excel::download(
-                new TagihanPerusahaanExport($periodeAwal, $periodeAkhir, $posisi),
+                new TagihanPerusahaanExport($tagihanBulan->format('Y-m-d'), $posisi),
                 $filename
             );
-            
+
         } catch (\Exception $e) {
-            Log::error('Error export Excel: ' . $e->getMessage());
-            
+            Log::error('Error export Excel tagihan: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal export Excel',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+                'error'   => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }
-    
+
     /**
-     * Dapatkan periode yang tersedia untuk export
+     * Daftar bulan yang tersedia untuk export
      */
-    public function getAvailablePeriodes()
+    public function getAvailableMonths()
     {
         try {
-            $availablePeriodes = TagihanPerusahaan::selectRaw('
-                periode_awal,
-                periode_akhir,
-                COUNT(*) as total,
-                SUM(total_diterima) as total_tagihan,
-                SUM(upah_yang_diterima_pekerja) as total_upa_pekerja
-            ')
-            ->groupBy('periode_awal', 'periode_akhir')
-            ->orderBy('periode_awal', 'desc')
-            ->get()
-            ->map(function($item) {
-                return [
-                    'periode_awal' => $item->periode_awal,
-                    'periode_akhir' => $item->periode_akhir,
-                    'periode_formatted' => date('d/m/Y', strtotime($item->periode_awal)) . ' - ' . date('d/m/Y', strtotime($item->periode_akhir)),
-                    'total_data' => $item->total,
-                    'total_tagihan' => (float)$item->total_tagihan,
-                    'total_tagihan_formatted' => 'Rp ' . number_format($item->total_tagihan, 0, ',', '.'),
-                    'total_upa_pekerja' => (float)$item->total_upa_pekerja,
-                    'total_upa_pekerja_formatted' => 'Rp ' . number_format($item->total_upa_pekerja, 0, ',', '.'),
-                    'rata_tagihan' => $item->total > 0 ? round($item->total_tagihan / $item->total, 0) : 0,
-                    'rata_tagihan_formatted' => 'Rp ' . number_format($item->total > 0 ? round($item->total_tagihan / $item->total, 0) : 0, 0, ',', '.'),
-                ];
-            });
-            
-            $totalAllData = TagihanPerusahaan::count();
-            
+            $availableMonths = TagihanPerusahaan::select(
+                    'tagihan_bulan',
+                    DB::raw('COUNT(*) as total'),
+                    DB::raw('SUM(upah_total) as total_tagihan'),
+                    DB::raw('SUM(upah_diterima_pekerja) as total_upah_diterima')
+                )
+                ->groupBy('tagihan_bulan')
+                ->orderBy('tagihan_bulan', 'desc')
+                ->get()
+                ->map(function ($item) {
+                    $bulan = Carbon::parse($item->tagihan_bulan);
+                    return [
+                        'value'                      => $bulan->format('Y-m-d'),
+                        'bulan'                      => $bulan->format('n'),
+                        'tahun'                      => $bulan->format('Y'),
+                        'nama_bulan'                 => $this->getBulanIndonesia($bulan->format('n')),
+                        'label'                      => $this->getBulanIndonesia($bulan->format('n')) . ' ' . $bulan->format('Y'),
+                        'total_data'                 => $item->total,
+                        'total_tagihan'              => (float) $item->total_tagihan,
+                        'total_tagihan_formatted'    => 'Rp ' . number_format($item->total_tagihan, 0, ',', '.'),
+                        'total_upah_diterima'        => (float) $item->total_upah_diterima,
+                        'total_upah_diterima_formatted' => 'Rp ' . number_format($item->total_upah_diterima, 0, ',', '.'),
+                    ];
+                });
+
             return response()->json([
                 'success' => true,
-                'message' => 'Periode tersedia',
-                'data' => [
-                    'available_periodes' => $availablePeriodes,
-                    'total_all_data' => $totalAllData,
-                    'total_periodes' => $availablePeriodes->count(),
-                    'suggestion' => $availablePeriodes->isNotEmpty() 
-                        ? 'Gunakan salah satu periode di atas untuk export' 
-                        : 'Tidak ada data tagihan. Tambahkan data terlebih dahulu.'
+                'message' => 'Daftar bulan tagihan berhasil diambil',
+                'data'    => [
+                    'available_months' => $availableMonths,
+                    'total_all_data'   => TagihanPerusahaan::count(),
+                    'total_bulan'      => $availableMonths->count(),
                 ]
             ]);
-            
+
         } catch (\Exception $e) {
+            Log::error('Error getAvailableMonths tagihan: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mengambil data periode',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+                'message' => 'Gagal mengambil daftar bulan',
+                'error'   => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }
-    
-    /**
-     * TEST endpoint untuk cek data
-     */
-    public function testData(Request $request)
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    private function generateFilename(Carbon $bulan, ?string $posisi = null): string
     {
-        try {
-            // Cek total data
-            $totalTagihan = TagihanPerusahaan::count();
-            
-            // Cek data terbaru
-            $latestData = TagihanPerusahaan::latest()->take(3)->get([
-                'id', 'nama', 'periode_awal', 'periode_akhir', 'posisi', 'total_diterima'
-            ]);
-            
-            // Cek periode yang ada
-            $periodes = TagihanPerusahaan::selectRaw('
-                DISTINCT periode_awal, periode_akhir
-            ')->orderBy('periode_awal', 'desc')->get();
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Test data tagihan perusahaan',
-                'data' => [
-                    'total_data' => $totalTagihan,
-                    'latest_data' => $latestData,
-                    'available_periodes' => $periodes->map(function($item) {
-                        return [
-                            'periode_awal' => $item->periode_awal,
-                            'periode_akhir' => $item->periode_akhir,
-                            'formatted' => date('d/m/Y', strtotime($item->periode_awal)) . ' - ' . date('d/m/Y', strtotime($item->periode_akhir))
-                        ];
-                    }),
-                    'database_status' => 'OK',
-                    'suggestion' => $totalTagihan === 0 
-                        ? 'Tambahkan data tagihan terlebih dahulu via API POST /api/tagihan-perusahaan'
-                        : 'Data tersedia. Gunakan periode yang ada di available_periodes'
-                ]
-            ]);
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Test gagal',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-    
-    /**
-     * Generate filename untuk export
-     */
-    private function generateFilename($periodeAwal, $periodeAkhir, $posisi = null)
-    {
-        $awal = date('Ymd', strtotime($periodeAwal));
-        $akhir = date('Ymd', strtotime($periodeAkhir));
-        
-        $filename = "tagihan-perusahaan-{$awal}-{$akhir}";
-        
+        $filename = 'tagihan-perusahaan-' . $bulan->format('Y-m');
         if ($posisi) {
-            $filename .= "-{$posisi}";
+            $filename .= '-' . $posisi;
         }
-        
-        $filename .= ".xlsx";
-        
-        return $filename;
+        return $filename . '.xlsx';
+    }
+
+    private function getBulanIndonesia(int|string $bulan): string
+    {
+        $names = [
+            1 => 'Januari',   2 => 'Februari', 3 => 'Maret',    4 => 'April',
+            5 => 'Mei',       6 => 'Juni',     7 => 'Juli',      8 => 'Agustus',
+            9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember',
+        ];
+        return $names[(int) $bulan] ?? '';
     }
 }

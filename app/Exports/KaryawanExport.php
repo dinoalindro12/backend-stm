@@ -4,8 +4,6 @@ namespace App\Exports;
 
 use App\Models\Karyawan;
 use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithTitle;
@@ -16,12 +14,10 @@ use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 
-class KaryawanExport implements 
-    FromCollection, 
-    WithHeadings, 
-    WithMapping, 
-    WithStyles, 
-    WithColumnWidths, 
+class KaryawanExport implements
+    FromCollection,
+    WithStyles,
+    WithColumnWidths,
     WithTitle,
     WithEvents
 {
@@ -72,48 +68,6 @@ class KaryawanExport implements
     public function collection()
     {
         return $this->data;
-    }
-
-    /**
-     * Define headings - 12 kolom (A-L)
-     */
-    public function headings(): array
-    {
-        return [
-            'No',                           // A
-            'Nomor Induk',                  // B
-            'NIK',                          // C
-            'No. Rekening BRI',             // D
-            'Nama Lengkap',                 // E
-            'Posisi',                       // F
-            'Email',                        // G
-            'No. WhatsApp',                 // H
-            'Alamat',                       // I
-            'Tanggal Masuk',                // J
-            'Tanggal Keluar',               // K
-            'Status',                       // L
-        ];
-    }
-
-    /**
-     * Map each row
-     */
-    public function map($karyawan): array
-    {
-        return [
-            '', // No akan diisi otomatis nanti
-            $karyawan->nomor_induk,
-            $karyawan->nik,
-            $karyawan->no_rek_bri,
-            $karyawan->nama_lengkap,
-            $this->getPosisiLabel($karyawan->posisi),
-            $karyawan->email ?? '-',
-            $karyawan->no_wa ?? '-',
-            $karyawan->alamat,
-            $karyawan->tanggal_masuk ? $karyawan->tanggal_masuk->format('d/m/Y') : '-',
-            $karyawan->tanggal_keluar ? $karyawan->tanggal_keluar->format('d/m/Y') : '-',
-            $karyawan->status_aktif ? 'Aktif' : 'Tidak Aktif',
-        ];
     }
 
     /**

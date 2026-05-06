@@ -2,9 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Karyawan;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Carbon\Carbon;
 
 class TagihanPerusahaan extends Model
 {
@@ -13,15 +17,10 @@ class TagihanPerusahaan extends Model
     protected $table = 'tagihan_perusahaan';
 
     protected $fillable = [
-        'no_induk',
-        'nik',
-        'nama',
-        'no_rek_bri',
-        'posisi',
-        'jumlah_hari_kerja',
-        'gaji_harian',
-        'lembur',
-        'thr',
+        'karyawan_id',
+        'admin_id',
+        'updated_by',
+        'jumlah_penghasilan_kotor',
         'bpjs_kesehatan',
         'jkk',
         'jkm',
@@ -29,20 +28,17 @@ class TagihanPerusahaan extends Model
         'jp',
         'seragam_cs_dan_keamanan',
         'fee_manajemen',
-        'jumlah_iuran_bpjs',
-        'upa_pekerja',
-        'upah_yang_diterima_pekerja',
-        'total_diterima',
-        'periode_awal',
-        'periode_akhir',
-        'tanggal_cetak',
+        'thr',
+        'jumlah_hari_kerja',
+        'gaji_harian',
+        'jlh_lembur',
+        'upah_diterima_pekerja',
+        'upah_total',
+        'tagihan_bulan',
     ];
 
     protected $casts = [
-        'jumlah_hari_kerja' => 'decimal:2',
-        'gaji_harian' => 'decimal:2',
-        'lembur' => 'decimal:2',
-        'thr' => 'decimal:2',
+        'jumlah_penghasilan_kotor' => 'decimal:2',
         'bpjs_kesehatan' => 'decimal:2',
         'jkk' => 'decimal:2',
         'jkm' => 'decimal:2',
@@ -50,262 +46,166 @@ class TagihanPerusahaan extends Model
         'jp' => 'decimal:2',
         'seragam_cs_dan_keamanan' => 'decimal:2',
         'fee_manajemen' => 'decimal:2',
-        'jumlah_iuran_bpjs' => 'decimal:2',
-        'upa_pekerja' => 'decimal:2',
-        'upah_yang_diterima_pekerja' => 'decimal:2',
-        'total_diterima' => 'decimal:2',
-        'periode_awal' => 'date',
-        'periode_akhir' => 'date',
-        'tanggal_cetak' => 'datetime',
+        'thr' => 'decimal:2',
+        'jumlah_hari_kerja' => 'decimal:2',
+        'gaji_harian' => 'decimal:2',
+        'jlh_lembur' => 'decimal:2',
+        'upah_diterima_pekerja' => 'decimal:2',
+        'upah_total' => 'decimal:2',
+        'tagihan_bulan' => 'date',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     /**
-     * Relasi ke Karyawan
+     * Relasi ke karyawan — include soft-deleted agar data historis tagihan tetap terbaca
      */
-    public function karyawan()
+    public function karyawan(): BelongsTo
     {
-        return $this->belongsTo(Karyawan::class, 'no_induk', 'nomor_induk');
+        return $this->belongsTo(Karyawan::class, 'karyawan_id')->withTrashed();
+    }
+
+    /**
+     * Relasi ke Admin (User)
+     */
+    public function admin(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'admin_id');
+    }
+
+    /**
+     * Admin yang terakhir mengubah tagihan
+     */
+    public function updatedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'updated_by');
     }
 
     /**
      * Boot method untuk auto-calculate
      */
-   protected static function boot()
-{
-    parent::boot();
+    protected static function boot()
+    {
+        parent::boot();
 
-    static::saving(function ($tagihan) {
-        // Hitung upa pekerja terlebih dahulu (gaji pokok + lembur + thr)
-        $tagihan->upa_pekerja = 
-            ($tagihan->gaji_harian * $tagihan->jumlah_hari_kerja) + 
-            ($tagihan->lembur ?? 0) + 
-            ($tagihan->thr ?? 0);
+        static::creating(function ($tagihan) {
+            if (empty($tagihan->tagihan_bulan)) {
+                $tagihan->tagihan_bulan = Carbon::now()->startOfMonth();
+            }
+        });
 
-        // Jika jumlah hari kerja kurang dari 7, set semua komponen ke 0
-        if ($tagihan->jumlah_hari_kerja < 7) {
-            $tagihan->bpjs_kesehatan = 0;
-            $tagihan->jht = 0;
-            $tagihan->jp = 0;
-            $tagihan->jkk = 0;
-            $tagihan->jkm = 0;
-            $tagihan->seragam_cs_dan_keamanan = 0;
-            $tagihan->fee_manajemen = 0;
-            
-            // Jika tidak ada potongan, upah yang diterima = upa pekerja
-            $tagihan->upah_yang_diterima_pekerja = $tagihan->upa_pekerja;
-            
-            // Total diterima = upa pekerja (karena tidak ada tambahan iuran)
-            $tagihan->total_diterima = $tagihan->upa_pekerja;
-        } else {
-            // Hitung jumlah iuran bpjs (hanya jika hari kerja >= 7)
-            $tagihan->jumlah_iuran_bpjs = 
-                $tagihan->bpjs_kesehatan + 
-                $tagihan->jkk + 
-                $tagihan->jkm + 
-                $tagihan->jht + 
-                $tagihan->jp + 
-                $tagihan->seragam_cs_dan_keamanan + 
-                $tagihan->fee_manajemen;
-            
-            // Hitung upah yang diterima pekerja (dengan potongan)
-            // Sesuaikan nilai 149316 dengan kebutuhan bisnis Anda
-            $tagihan->upah_yang_diterima_pekerja = 
-                $tagihan->upa_pekerja - $tagihan->gaji_harian;
-            
-            // Hitung total diterima (upa pekerja + total iuran)
-            $tagihan->total_diterima = 
-                $tagihan->upa_pekerja + $tagihan->jumlah_iuran_bpjs;
-        }
-    });
-}
-    
-    // ========== SCOPES BARU ==========
+        static::saving(function ($tagihan) {
+            // 1. Hitung Komponen BPJS (Persentase Perusahaan)
+            // Sesuaikan persentase ini dengan kebijakan terbaru perusahaan Anda
+            $tagihan->bpjs_kesehatan = $tagihan->jumlah_penghasilan_kotor * 0.04; 
+            $tagihan->jht = $tagihan->jumlah_penghasilan_kotor * 0.037;
+            $tagihan->jp = $tagihan->jumlah_penghasilan_kotor * 0.02;
+            $tagihan->jkk = $tagihan->jumlah_penghasilan_kotor * 0.0024;
+            $tagihan->jkm = $tagihan->jumlah_penghasilan_kotor * 0.003;
 
-/**
- * Scope untuk filter berdasarkan bulan tagihan
- * @param int $bulan 1-12
- */
-public function scopeBulanTagihan($query, $bulan)
-{
-    return $query->whereMonth('periode_awal', $bulan);
-}
+            // 2. Hitung Dasar Upah Pekerja (Gaji + Lembur + THR)
+            $upah_dasar = ($tagihan->gaji_harian * $tagihan->jumlah_hari_kerja) + 
+                        ($tagihan->jlh_lembur ?? 0) + 
+                        ($tagihan->thr ?? 0);
 
-/**
- * Scope untuk filter berdasarkan tahun tagihan
- */
-public function scopeTahunTagihan($query, $tahun)
-{
-    return $query->whereYear('periode_awal', $tahun);
-}
+            // 3. Kondisi Khusus Hari Kerja
+            if ($tagihan->jumlah_hari_kerja < 7) {
+                $tagihan->bpjs_kesehatan = 0;
+                $tagihan->jht = 0;
+                $tagihan->jp = 0;
+                $tagihan->jkk = 0;
+                $tagihan->jkm = 0;
+                $tagihan->seragam_cs_dan_keamanan = 0;
+                $tagihan->fee_manajemen = 0;
+                $tagihan->upah_diterima_pekerja = $upah_dasar;
+                $tagihan->upah_total = $upah_dasar;
+            } else {
+                // Total Biaya Tambahan Perusahaan
+                $total_iuran_perusahaan = 
+                    $tagihan->bpjs_kesehatan + $tagihan->jkk + $tagihan->jkm + 
+                    $tagihan->jht + $tagihan->jp + 
+                    ($tagihan->seragam_cs_dan_keamanan ?? 0) + 
+                    ($tagihan->fee_manajemen ?? 0);
+                
+                // Upah yang dikirim ke rekening pekerja (setelah dikurangi biaya tertentu jika ada)
+                // Di sini contohnya dikurangi 1 kali gaji harian sebagai admin fee/simpanan (sesuaikan logic Anda)
+                $tagihan->upah_diterima_pekerja = $upah_dasar - $tagihan->gaji_harian - $tagihan->total_iuran_perusahaan; // Contoh pengurangan gaji harian sebagai biaya tambahan, sesuaikan dengan kebutuhan Anda
 
-/**
- * Scope untuk filter berdasarkan bulan dan tahun tagihan
- */
-public function scopeBulanTahunTagihan($query, $bulan, $tahun)
-{
-    return $query->whereMonth('periode_awal', $bulan)
-                ->whereYear('periode_awal', $tahun);
-}
+                // Total Tagihan ke Perusahaan (Upah Dasar + Iuran/Fee)
+                $tagihan->upah_total = $tagihan->upah_diterima_pekerja + $total_iuran_perusahaan + $tagihan->gaji_harian; // Tambahkan gaji harian sebagai biaya tambahan jika diperlukan
+            }
+        });
+    }
 
-/**
- * Scope untuk filter berdasarkan status tagihan (jika ada field status)
- */
-public function scopeStatus($query, $status)
-{
-    // Jika ada field status, sesuaikan dengan nama field yang benar
-    // return $query->where('status_tagihan', $status);
-    return $query; // sementara return query as-is jika tidak ada field status
-}
+    // ========== ACCESSORS ==========
 
-// ========== ACCESSORS ==========
+    public function getNamaBulanAttribute()
+    {
+        if (!$this->tagihan_bulan) return null;
+        $bulanIndo = [
+            1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
+            5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
+            9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
+        ];
+        return $bulanIndo[(int)$this->tagihan_bulan->format('n')] ?? null;
+    }
 
-/**
- * Ambil bulan dari periode_awal
- */
-public function getBulanAttribute()
-{
-    return $this->periode_awal ? date('n', strtotime($this->periode_awal)) : null;
-}
+    public function getBulanTahunAttribute()
+    {
+        if (!$this->tagihan_bulan) return null;
+        return $this->nama_bulan . ' ' . $this->tagihan_bulan->format('Y');
+    }
 
-/**
- * Ambil tahun dari periode_awal
- */
-public function getTahunAttribute()
-{
-    return $this->periode_awal ? date('Y', strtotime($this->periode_awal)) : null;
-}
+    // ========== SCOPES ==========
 
-/**
- * Ambil nama bulan dari periode_awal
- */
-public function getNamaBulanAttribute()
-{
-    if (!$this->periode_awal) return null;
-    
-    $bulan = [
-        1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
-        5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
-        9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
-    ];
-    
-    $bulanAngka = date('n', strtotime($this->periode_awal));
-    return $bulan[$bulanAngka] ?? null;
-}
+    public function scopeBulanTahun($query, $bulan, $tahun)
+    {
+        return $query->whereMonth('tagihan_bulan', $bulan)
+                    ->whereYear('tagihan_bulan', $tahun);
+    }
 
-/**
- * Format tanggal cetak
- */
-public function getTanggalCetakFormattedAttribute()
-{
-    return $this->tanggal_cetak ? date('d/m/Y', strtotime($this->tanggal_cetak)) : '-';
-}
+    public function scopeBulanTahunTagihan($query, $bulan, $tahun)
+    {
+        return $query->whereMonth('tagihan_bulan', $bulan)
+                    ->whereYear('tagihan_bulan', $tahun);
+    }
 
-/**
- * Format periode (dari - sampai)
- */
-public function getPeriodeFormattedAttribute()
-{
-    if (!$this->periode_awal || !$this->periode_akhir) return '-';
-    
-    $awal = date('d/m/Y', strtotime($this->periode_awal));
-    $akhir = date('d/m/Y', strtotime($this->periode_akhir));
-    return $awal . ' - ' . $akhir;
-}
+    public function scopeBulanTagihan($query, $bulan)
+    {
+        return $query->whereMonth('tagihan_bulan', $bulan);
+    }
 
-/**
- * Getter untuk total gaji harian (jumlah_hari_kerja * gaji_harian)
- */
-public function getTotalGajiHarianAttribute()
-{
-    return $this->jumlah_hari_kerja * $this->gaji_harian;
-}
+    public function scopeTahunTagihan($query, $tahun)
+    {
+        return $query->whereYear('tagihan_bulan', $tahun);
+    }
 
-/**
- * Getter untuk total penghasilan kotor (upa_pekerja + jumlah_iuran_bpjs)
- */
-public function getTotalPenghasilanKotorAttribute()
-{
-    return ($this->upa_pekerja ?? 0) + ($this->jumlah_iuran_bpjs ?? 0);
-}
+    public function scopePeriode($query, $awal, $akhir)
+    {
+        return $query->whereBetween('tagihan_bulan', [$awal, $akhir]);
+    }
 
-/**
- * Setter untuk memastikan nilai null diubah ke 0
- */
-public function setBpjsKesehatanAttribute($value)
-{
-    $this->attributes['bpjs_kesehatan'] = $value ?: 0;
-}
+    /**
+     * Filter berdasarkan posisi karyawan via relasi
+     */
+    public function scopePosisi($query, $posisi)
+    {
+        return $query->whereHas('karyawan', fn($q) => $q->where('posisi', $posisi));
+    }
 
-public function setJkkAttribute($value)
-{
-    $this->attributes['jkk'] = $value ?: 0;
-}
+    /**
+     * Filter berdasarkan nomor induk karyawan
+     */
+    public function scopeKaryawan($query, $nomorInduk)
+    {
+        return $query->whereHas('karyawan', fn($q) => $q->where('nomor_induk', $nomorInduk));
+    }
 
-public function setJkmAttribute($value)
-{
-    $this->attributes['jkm'] = $value ?: 0;
-}
-
-public function setJhtAttribute($value)
-{
-    $this->attributes['jht'] = $value ?: 0;
-}
-
-public function setJpAttribute($value)
-{
-    $this->attributes['jp'] = $value ?: 0;
-}
-
-public function setSeragamCsDanKeamananAttribute($value)
-{
-    $this->attributes['seragam_cs_dan_keamanan'] = $value ?: 0;
-}
-
-public function setFeeManajemenAttribute($value)
-{
-    $this->attributes['fee_manajemen'] = $value ?: 0;
-}
-
-public function setLemburAttribute($value)
-{
-    $this->attributes['lembur'] = $value ?: 0;
-}
-
-public function setThrAttribute($value)
-{
-    $this->attributes['thr'] = $value ?: 0;
-}
-
-/**
- * Scope untuk filter berdasarkan periode (existing - tetap dipertahankan)
- */
-public function scopePeriode($query, $periodeAwal, $periodeAkhir)
-{
-    return $query->where('periode_awal', '>=', $periodeAwal)
-                ->where('periode_akhir', '<=', $periodeAkhir);
-}
-
-/**
- * Scope untuk filter berdasarkan posisi (existing - tetap dipertahankan)
- */
-public function scopePosisi($query, $posisi)
-{
-    return $query->where('posisi', $posisi);
-}
-
-/**
- * Scope untuk filter berdasarkan karyawan (no_induk)
- */
-public function scopeKaryawan($query, $noInduk)
-{
-    return $query->where('no_induk', $noInduk);
-}
-
-/**
- * Scope untuk filter berdasarkan NIK
- */
-public function scopeNik($query, $nik)
-{
-    return $query->where('nik', $nik);
-}
+    /**
+     * Filter berdasarkan NIK karyawan
+     */
+    public function scopeNik($query, $nik)
+    {
+        return $query->whereHas('karyawan', fn($q) => $q->where('nik', $nik));
+    }
 }

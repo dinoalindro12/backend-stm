@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TagihanPerusahaanResource;
+use App\Models\Karyawan;
 use App\Models\TagihanPerusahaan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class TagihanPerusahaanController extends Controller
 {
@@ -17,26 +19,20 @@ class TagihanPerusahaanController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = TagihanPerusahaan::with('karyawan');
+            $query = TagihanPerusahaan::with(['karyawan', 'admin', 'updatedBy']);
             
-            // Filter berdasarkan periode
-            if ($request->has('periode_awal') && $request->has('periode_akhir')) {
-                $query->periode($request->periode_awal, $request->periode_akhir);
-            }
-            
-            // Filter berdasarkan bulan
-            if ($request->has('bulan')) {
+            //  FILTER BERDASARKAN BULAN (tagihan_bulan)
+            if ($request->has('bulan') && $request->has('tahun')) {
+                $query->bulanTahunTagihan($request->bulan, $request->tahun);
+            } elseif ($request->has('bulan')) {
                 $query->bulanTagihan($request->bulan);
-            }
-            
-            // Filter berdasarkan tahun
-            if ($request->has('tahun')) {
+            } elseif ($request->has('tahun')) {
                 $query->tahunTagihan($request->tahun);
             }
             
-            // Filter berdasarkan bulan dan tahun
-            if ($request->has('bulan') && $request->has('tahun')) {
-                $query->bulanTahunTagihan($request->bulan, $request->tahun);
+            //  FILTER BERDASARKAN RANGE TANGGAL (jika diperlukan)
+            if ($request->has('tanggal_awal') && $request->has('tanggal_akhir')) {
+                $query->periode($request->tanggal_awal, $request->tanggal_akhir);
             }
             
             // Filter berdasarkan posisi
@@ -54,12 +50,21 @@ class TagihanPerusahaanController extends Controller
                 $query->nik($request->nik);
             }
             
+            // Filter status cetak
+            if ($request->has('status_cetak')) {
+                if ($request->status_cetak === 'sudah') {
+                    $query->sudahCetak();
+                } elseif ($request->status_cetak === 'belum') {
+                    $query->belumCetak();
+                }
+            }
+            
             // Sorting
             if ($request->has('sort_by')) {
                 $sortOrder = $request->get('sort_order', 'asc');
                 $query->orderBy($request->sort_by, $sortOrder);
             } else {
-                $query->orderBy('periode_awal', 'desc')->orderBy('created_at', 'desc');
+                $query->orderBy('tagihan_bulan', 'desc')->orderBy('created_at', 'desc');
             }
             
             // Pagination
@@ -81,77 +86,101 @@ class TagihanPerusahaanController extends Controller
      * Store a newly created resource in storage.
      */
     public function store(Request $request)
-{
-    $validator = Validator::make($request->all(), [
-        'no_induk' => 'required|string|max:12|exists:karyawans,nomor_induk',
-        'nik' => 'required|string|max:20',
-        'nama' => 'required|string|max:100',
-        'no_rek_bri' => 'nullable|string|max:20',
-        'posisi' => 'required|in:jasa,supir,keamanan,cleaning_service,operator',
-        'jumlah_hari_kerja' => 'required|numeric|min:0',
-        'gaji_harian' => 'required|numeric|min:0',
-        'lembur' => 'nullable|numeric|min:0',
-        'thr' => 'nullable|numeric|min:0',
-        'bpjs_kesehatan' => 'nullable|numeric|min:0',
-        'jkk' => 'nullable|numeric|min:0',
-        'jkm' => 'nullable|numeric|min:0',
-        'jht' => 'nullable|numeric|min:0',
-        'jp' => 'nullable|numeric|min:0',
-        'seragam_cs_dan_keamanan' => 'nullable|numeric|min:0',
-        'fee_manajemen' => 'nullable|numeric|min:0',
-        'periode_awal' => 'required|date',
-        'periode_akhir' => 'required|date|after_or_equal:periode_awal',
-        'tanggal_cetak' => 'nullable|date',
-    ]);
+    {
+        // Hitung jumlah hari dalam bulan tagihan (default bulan ini jika tidak diisi)
+        $maxHariKerja = $request->filled('tagihan_bulan')
+            ? Carbon::parse($request->tagihan_bulan)->daysInMonth
+            : Carbon::now()->daysInMonth;
 
-    if ($validator->fails()) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Validasi gagal',
-            'errors' => $validator->errors()
-        ], 422);
-    }
+        $validator = Validator::make($request->all(), [
+            'karyawan_id' => 'required|exists:karyawans,id',
+            'jumlah_penghasilan_kotor' => 'required|numeric|min:0',
+            'jumlah_hari_kerja' => "required|numeric|min:0|max:{$maxHariKerja}",
+            'gaji_harian' => 'required|numeric|min:0',
+            'jlh_lembur' => 'nullable|numeric|min:0',
+            'thr' => 'nullable|numeric|min:0',
+            'seragam_cs_dan_keamanan' => 'nullable|numeric|min:0',
+            'fee_manajemen' => 'nullable|numeric|min:0',
+            'tagihan_bulan' => 'nullable|date',
+        ], [
+            'jumlah_hari_kerja.max' => "Jumlah hari kerja tidak boleh melebihi {$maxHariKerja} hari (jumlah hari dalam bulan tersebut).",
+        ]);
 
-    try {
-        DB::beginTransaction();
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors()
+            ], 422);
+        }
 
-        // Cek duplikasi tagihan untuk karyawan yang sama di periode yang sama
-        $existingTagihan = TagihanPerusahaan::where('no_induk', $request->no_induk)
-            ->whereYear('periode_awal', date('Y', strtotime($request->periode_awal)))
-            ->whereMonth('periode_awal', date('m', strtotime($request->periode_awal)))
-            ->first();
+        try {
+            DB::beginTransaction();
 
-        if ($existingTagihan) {
+            // ✅ Cek apakah karyawan sudah dihapus (soft delete)
+            $karyawan = Karyawan::withTrashed()->find($request->karyawan_id);
+            if ($karyawan && $karyawan->trashed()) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tagihan gagal dibuat',
+                    'error' => 'Data tagihan tidak dapat dibuat karena karyawan "' . $karyawan->nama_lengkap . '" ('. $karyawan->nomor_induk .') sudah dihapus dari sistem.'
+                ], 422);
+            }
+
+            // ✅ Cek duplikasi berdasarkan tagihan_bulan
+            $tagihanBulan = Carbon::parse($request->tagihan_bulan)->startOfMonth();
+            
+            $existingTagihan = TagihanPerusahaan::where('karyawan_id', $request->karyawan_id)
+                ->whereYear('tagihan_bulan', $tagihanBulan->year)
+                ->whereMonth('tagihan_bulan', $tagihanBulan->month)
+                ->first();
+
+            if ($existingTagihan) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tagihan gagal ditambahkan',
+                    'error' => 'Karyawan sudah memiliki data tagihan untuk bulan ' . 
+                            $this->getBulanIndonesia($tagihanBulan->format('n')) . ' ' . $tagihanBulan->format('Y') .
+                            '. Tidak dapat membuat tagihan ganda pada bulan yang sama.'
+                ], 409);
+            }
+
+            // ✅ HAPUS field yang dihitung otomatis oleh model
+            $data = $request->except([
+                'bpjs_kesehatan', 'jkk', 'jkm', 'jht', 'jp',
+                'upah_diterima_pekerja', 'upah_total',
+            ]);
+
+            // Inject admin_id dan updated_by
+            $data['admin_id'] = $request->user()->id;
+            $data['updated_by'] = $request->user()->id;
+            
+            $tagihan = TagihanPerusahaan::create($data);
+            
+            // Refresh untuk mendapatkan nilai hasil perhitungan dari boot()
+            $tagihan->refresh();
+
+            DB::commit();
+
+            return (new TagihanPerusahaanResource($tagihan->load(['karyawan', 'admin', 'updatedBy'])))
+                ->additional([
+                    'success' => true,
+                    'message' => 'Data tagihan perusahaan berhasil ditambahkan'
+                ])
+                ->response()
+                ->setStatusCode(201);
+
+        } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Tagihan gagal ditambahkan',
-                'error' => 'Karyawan dengan nomor induk ' . $request->no_induk . 
-                        ' sudah memiliki data tagihan untuk bulan ' . 
-                        date('F Y', strtotime($request->periode_awal)) . 
-                        '. Tidak dapat membuat tagihan ganda pada bulan yang sama.'
-            ], 409);
+                'message' => 'Gagal menambahkan data tagihan perusahaan',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $tagihan = TagihanPerusahaan::create($request->all());
-
-        DB::commit();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Data tagihan perusahaan berhasil ditambahkan',
-            'data' => new TagihanPerusahaanResource($tagihan)
-        ], 201);
-
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Gagal menambahkan data tagihan perusahaan',
-            'error' => $e->getMessage()
-        ], 500);
     }
-}
 
     /**
      * Display the specified resource.
@@ -159,9 +188,13 @@ class TagihanPerusahaanController extends Controller
     public function show(string $id)
     {
         try {
-            $tagihan = TagihanPerusahaan::with('karyawan')->findOrFail($id);
+            $tagihan = TagihanPerusahaan::with(['karyawan', 'admin', 'updatedBy'])->findOrFail($id);
             
-            return new TagihanPerusahaanResource($tagihan);
+            return (new TagihanPerusahaanResource($tagihan))
+                ->additional([
+                    'success' => true,
+                    'message' => 'Data tagihan perusahaan berhasil diambil'
+                ]);
             
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
@@ -181,90 +214,107 @@ class TagihanPerusahaanController extends Controller
      * Update the specified resource in storage.
      */
     public function update(Request $request, $id)
-{
-    $validator = Validator::make($request->all(), [
-        'no_induk' => 'sometimes|string|max:12|exists:karyawans,nomor_induk',
-        'nik' => 'sometimes|string|max:20',
-        'nama' => 'sometimes|string|max:100',
-        'no_rek_bri' => 'nullable|string|max:20',
-        'posisi' => 'sometimes|in:jasa,supir,keamanan,cleaning_service,operator',
-        'jumlah_hari_kerja' => 'sometimes|numeric|min:0',
-        'gaji_harian' => 'sometimes|numeric|min:0',
-        'lembur' => 'nullable|numeric|min:0',
-        'thr' => 'nullable|numeric|min:0',
-        'bpjs_kesehatan' => 'nullable|numeric|min:0',
-        'jkk' => 'nullable|numeric|min:0',
-        'jkm' => 'nullable|numeric|min:0',
-        'jht' => 'nullable|numeric|min:0',
-        'jp' => 'nullable|numeric|min:0',
-        'seragam_cs_dan_keamanan' => 'nullable|numeric|min:0',
-        'fee_manajemen' => 'nullable|numeric|min:0',
-        'periode_awal' => 'sometimes|date',
-        'periode_akhir' => 'sometimes|date|after_or_equal:periode_awal',
-        'tanggal_cetak' => 'nullable|date',
-    ]);
-
-    if ($validator->fails()) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Validasi gagal',
-            'errors' => $validator->errors()
-        ], 422);
-    }
-
-    try {
-        DB::beginTransaction();
-
-        $tagihan = TagihanPerusahaan::findOrFail($id);
-
-        // Cek duplikasi jika ada perubahan no_induk atau periode_awal
-        if ($request->has('no_induk') || $request->has('periode_awal')) {
-            $noInduk = $request->no_induk ?? $tagihan->no_induk;
-            $periodeAwal = $request->periode_awal ?? $tagihan->periode_awal;
-
-            $existingTagihan = TagihanPerusahaan::where('no_induk', $noInduk)
-                ->whereYear('periode_awal', date('Y', strtotime($periodeAwal)))
-                ->whereMonth('periode_awal', date('m', strtotime($periodeAwal)))
-                ->where('id', '!=', $id)
-                ->first();
-
-            if ($existingTagihan) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Tagihan perusahaan gagal diupdate',
-                    'error' => 'Karyawan dengan nomor induk ' . $noInduk . 
-                            ' sudah memiliki data tagihan untuk bulan ' . 
-                            date('F Y', strtotime($periodeAwal)) . 
-                            '. Tidak dapat membuat tagihan ganda pada bulan yang sama.'
-                ], 409);
+    {
+        // Hitung jumlah hari dalam bulan tagihan
+        // Jika tagihan_bulan tidak dikirim, ambil dari data existing
+        $maxHariKerja = 31; // fallback default
+        if ($request->filled('tagihan_bulan')) {
+            $maxHariKerja = Carbon::parse($request->tagihan_bulan)->daysInMonth;
+        } elseif ($request->isMethod('patch') || $request->isMethod('put')) {
+            $existingTagihan = TagihanPerusahaan::find($id);
+            if ($existingTagihan && $existingTagihan->tagihan_bulan) {
+                $maxHariKerja = Carbon::parse($existingTagihan->tagihan_bulan)->daysInMonth;
             }
         }
 
-        $tagihan->update($request->all());
+        $validator = Validator::make($request->all(), [
+            'karyawan_id' => 'sometimes|exists:karyawans,id',
+            'jumlah_penghasilan_kotor' => 'sometimes|numeric|min:0',
+            'jumlah_hari_kerja' => "sometimes|numeric|min:0|max:{$maxHariKerja}",
+            'gaji_harian' => 'sometimes|numeric|min:0',
+            'jlh_lembur' => 'nullable|numeric|min:0',
+            'thr' => 'nullable|numeric|min:0',
+            'seragam_cs_dan_keamanan' => 'nullable|numeric|min:0',
+            'fee_manajemen' => 'nullable|numeric|min:0',
+            'tagihan_bulan' => 'sometimes|date',
+        ], [
+            'jumlah_hari_kerja.max' => "Jumlah hari kerja tidak boleh melebihi {$maxHariKerja} hari (jumlah hari dalam bulan tersebut).",
+        ]);
 
-        DB::commit();
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors()
+            ], 422);
+        }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Data tagihan perusahaan berhasil diupdate',
-            'data' => new TagihanPerusahaanResource($tagihan)
-        ], 200);
+        try {
+            DB::beginTransaction();
 
-    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Tagihan perusahaan tidak ditemukan'
-        ], 404);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Gagal mengupdate data tagihan perusahaan',
-            'error' => $e->getMessage()
-        ], 500);
+            $tagihan = TagihanPerusahaan::findOrFail($id);
+
+            // ✅ Cek duplikasi berdasarkan tagihan_bulan
+            if ($request->has('karyawan_id') || $request->has('tagihan_bulan')) {
+                $karyawanId = $request->karyawan_id ?? $tagihan->karyawan_id;
+                $tagihanBulan = $request->has('tagihan_bulan')
+                    ? Carbon::parse($request->tagihan_bulan)->startOfMonth()
+                    : Carbon::parse($tagihan->tagihan_bulan)->startOfMonth();
+
+                $existingTagihan = TagihanPerusahaan::where('karyawan_id', $karyawanId)
+                    ->whereYear('tagihan_bulan', $tagihanBulan->year)
+                    ->whereMonth('tagihan_bulan', $tagihanBulan->month)
+                    ->where('id', '!=', $id)
+                    ->first();
+
+                if ($existingTagihan) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Tagihan perusahaan gagal diupdate',
+                        'error' => 'Karyawan sudah memiliki data tagihan untuk bulan ' .
+                                $this->getBulanIndonesia($tagihanBulan->format('n')) . ' ' . $tagihanBulan->format('Y') .
+                                '. Tidak dapat membuat tagihan ganda pada bulan yang sama.'
+                    ], 409);
+                }
+            }
+
+            // ✅ HAPUS field yang dihitung otomatis
+            $data = $request->except([
+                'bpjs_kesehatan', 'jkk', 'jkm', 'jht', 'jp',
+                'upah_diterima_pekerja', 'upah_total',
+            ]);
+
+            // Inject updated_by
+            $data['updated_by'] = $request->user()->id;
+            
+            $tagihan->update($data);
+            
+            // Refresh untuk mendapatkan nilai hasil perhitungan dari boot()
+            $tagihan->refresh();
+
+            DB::commit();
+
+            return (new TagihanPerusahaanResource($tagihan->load(['karyawan', 'admin', 'updatedBy'])))
+                ->additional([
+                    'success' => true,
+                    'message' => 'Data tagihan perusahaan berhasil diupdate'
+                ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tagihan perusahaan tidak ditemukan'
+            ], 404);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengupdate data tagihan perusahaan',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
-}
 
     /**
      * Remove the specified resource from storage.
@@ -312,11 +362,11 @@ class TagihanPerusahaanController extends Controller
             
             DB::commit();
             
-            return response()->json([
-                'success' => true,
-                'message' => 'Tagihan perusahaan berhasil dipulihkan',
-                'data' => new TagihanPerusahaanResource($tagihan)
-            ]);
+            return (new TagihanPerusahaanResource($tagihan->load(['karyawan', 'admin', 'updatedBy'])))
+                ->additional([
+                    'success' => true,
+                    'message' => 'Tagihan perusahaan berhasil dipulihkan'
+                ]);
             
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
@@ -341,42 +391,88 @@ class TagihanPerusahaanController extends Controller
         try {
             $query = TagihanPerusahaan::query();
             
-            // Apply filters
-            if ($request->has('periode_awal') && $request->has('periode_akhir')) {
-                $query->periode($request->periode_awal, $request->periode_akhir);
-            }
-            
+            // ✅ Filter berdasarkan tagihan_bulan
             if ($request->has('bulan') && $request->has('tahun')) {
                 $query->bulanTahunTagihan($request->bulan, $request->tahun);
+            } elseif ($request->has('bulan')) {
+                $query->bulanTagihan($request->bulan);
+            } elseif ($request->has('tahun')) {
+                $query->tahunTagihan($request->tahun);
             }
             
             if ($request->has('posisi')) {
                 $query->posisi($request->posisi);
             }
             
+            // ✅ Summary dengan field yang benar
             $summary = $query->select(
                 DB::raw('COUNT(*) as total_karyawan'),
                 DB::raw('SUM(jumlah_hari_kerja) as total_hari_kerja'),
-                DB::raw('SUM(upa_pekerja) as total_upa_pekerja'),
-                DB::raw('SUM(jumlah_iuran_bpjs) as total_iuran_bpjs'),
-                DB::raw('SUM(total_diterima) as total_tagihan')
+                DB::raw('SUM(jumlah_penghasilan_kotor) as total_penghasilan_kotor'),
+                DB::raw('SUM(upah_diterima_pekerja) as total_upa_pekerja'),
+                DB::raw('SUM(bpjs_kesehatan) as total_bpjs_kesehatan'),
+                DB::raw('SUM(jkk) as total_jkk'),
+                DB::raw('SUM(jkm) as total_jkm'),
+                DB::raw('SUM(jht) as total_jht'),
+                DB::raw('SUM(jp) as total_jp'),
+                DB::raw('SUM(upah_diterima_pekerja) as total_upah_diterima'),
+                DB::raw('SUM(upah_total) as total_tagihan')
             )->first();
             
+            // Hitung total BPJS
+            $totalBPJS = ($summary->total_bpjs_kesehatan ?? 0) + 
+                        ($summary->total_jkk ?? 0) + 
+                        ($summary->total_jkm ?? 0) + 
+                        ($summary->total_jht ?? 0) + 
+                        ($summary->total_jp ?? 0);
+            
             // Get position distribution
-            $posisiDistribution = $query->clone()
-                ->select('posisi', DB::raw('COUNT(*) as jumlah'))
-                ->groupBy('posisi')
-                ->get();
+            $posisiDistribution = TagihanPerusahaan::query()
+                ->when($request->has('bulan') && $request->has('tahun'), fn($q) => $q->bulanTahunTagihan($request->bulan, $request->tahun))
+                ->when($request->has('bulan') && !$request->has('tahun'), fn($q) => $q->bulanTagihan($request->bulan))
+                ->when(!$request->has('bulan') && $request->has('tahun'), fn($q) => $q->tahunTagihan($request->tahun))
+                ->when($request->has('posisi'), fn($q) => $q->whereHas('karyawan', fn($k) => $k->where('posisi', $request->posisi)))
+                ->with('karyawan')
+                ->get()
+                ->groupBy(fn($item) => optional($item->karyawan)->posisi)
+                ->map(function ($items, $posisi) {
+                    return [
+                        'posisi' => $posisi,
+                        'posisi_label' => $this->getPosisiLabel($posisi),
+                        'jumlah' => $items->count(),
+                        'total' => $items->sum('upah_total'),
+                        'total_formatted' => 'Rp ' . number_format($items->sum('upah_total'), 0, ',', '.'),
+                    ];
+                })
+                ->values();
+            
+            // Format periode
+            $periodeText = null;
+            if ($request->has('bulan') && $request->has('tahun')) {
+                $periodeText = $this->getBulanIndonesia($request->bulan) . ' ' . $request->tahun;
+            } elseif ($request->has('tahun')) {
+                $periodeText = 'Tahun ' . $request->tahun;
+            }
             
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'summary' => $summary,
+                    'summary' => [
+                        'total_karyawan' => $summary->total_karyawan,
+                        'total_hari_kerja' => $summary->total_hari_kerja,
+                        'total_penghasilan_kotor' => $summary->total_penghasilan_kotor,
+                        'total_penghasilan_kotor_formatted' => 'Rp ' . number_format($summary->total_penghasilan_kotor ?? 0, 0, ',', '.'),
+                        'total_upa_pekerja' => $summary->total_upa_pekerja,
+                        'total_upa_pekerja_formatted' => 'Rp ' . number_format($summary->total_upa_pekerja ?? 0, 0, ',', '.'),
+                        'total_bpjs' => $totalBPJS,
+                        'total_bpjs_formatted' => 'Rp ' . number_format($totalBPJS, 0, ',', '.'),
+                        'total_upah_diterima' => $summary->total_upah_diterima,
+                        'total_upah_diterima_formatted' => 'Rp ' . number_format($summary->total_upah_diterima ?? 0, 0, ',', '.'),
+                        'total_tagihan' => $summary->total_tagihan,
+                        'total_tagihan_formatted' => 'Rp ' . number_format($summary->total_tagihan ?? 0, 0, ',', '.'),
+                    ],
                     'posisi_distribution' => $posisiDistribution,
-                    'periode' => [
-                        'awal' => $request->periode_awal ?? null,
-                        'akhir' => $request->periode_akhir ?? null
-                    ]
+                    'periode' => $periodeText
                 ]
             ]);
             
@@ -396,14 +492,15 @@ class TagihanPerusahaanController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'data' => 'required|array',
-            'data.*.no_induk' => 'required|string|max:50',
-            'data.*.nik' => 'required|string|max:20',
-            'data.*.nama' => 'required|string|max:255',
-            'data.*.posisi' => 'required|string|max:100',
-            'data.*.jumlah_hari_kerja' => 'required|integer|min:0',
+            'data.*.karyawan_id' => 'required|exists:karyawans,id',
+            'data.*.jumlah_penghasilan_kotor' => 'required|numeric|min:0',
+            'data.*.jumlah_hari_kerja' => 'required|numeric|min:0|max:31',
             'data.*.gaji_harian' => 'required|numeric|min:0',
-            'data.*.periode_awal' => 'required|date',
-            'data.*.periode_akhir' => 'required|date',
+            'data.*.tagihan_bulan' => 'required|date',
+            'data.*.jlh_lembur' => 'nullable|numeric|min:0',
+            'data.*.thr' => 'nullable|numeric|min:0',
+            'data.*.seragam_cs_dan_keamanan' => 'nullable|numeric|min:0',
+            'data.*.fee_manajemen' => 'nullable|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -422,11 +519,40 @@ class TagihanPerusahaanController extends Controller
             
             foreach ($request->data as $index => $item) {
                 try {
+                    // ✅ Cek apakah karyawan sudah dihapus (soft delete)
+                    $karyawan = Karyawan::withTrashed()->find($item['karyawan_id']);
+                    if ($karyawan && $karyawan->trashed()) {
+                        throw new \Exception('Data tagihan tidak dapat dibuat karena karyawan "' . $karyawan->nama_lengkap . '" (' . $karyawan->nomor_induk . ') sudah dihapus dari sistem.');
+                    }
+
+                    // ✅ Cek duplikasi berdasarkan tagihan_bulan
+                    $tagihanBulan = Carbon::parse($item['tagihan_bulan'])->startOfMonth();
+                    
+                    $existing = TagihanPerusahaan::where('karyawan_id', $item['karyawan_id'])
+                        ->whereYear('tagihan_bulan', $tagihanBulan->year)
+                        ->whereMonth('tagihan_bulan', $tagihanBulan->month)
+                        ->exists();
+                    
+                    if ($existing) {
+                        throw new \Exception('Data sudah ada untuk bulan ' . 
+                            $this->getBulanIndonesia($tagihanBulan->format('n')) . ' ' . $tagihanBulan->format('Y'));
+                    }
+                    
+                    // ✅ Hapus field yang dihitung otomatis
+                    $item = array_diff_key($item, array_flip([
+                        'bpjs_kesehatan', 'jkk', 'jkm', 'jht', 'jp',
+                        'upah_diterima_pekerja', 'upah_total',
+                    ]));
+
+                    // Inject admin_id dan updated_by
+                    $item['admin_id'] = $request->user()->id;
+                    $item['updated_by'] = $request->user()->id;
+                    
                     $tagihan = TagihanPerusahaan::create($item);
                     $imported[] = $tagihan;
                 } catch (\Exception $e) {
                     $errors[] = [
-                        'index' => $index,
+                        'index' => $index + 1,
                         'data' => $item,
                         'error' => $e->getMessage()
                     ];
@@ -500,14 +626,60 @@ class TagihanPerusahaanController extends Controller
     }
 
     /**
-     * Export tagihan perusahaan by periode.
+     * Get available months for filtering.
      */
-    public function export(Request $request)
+    public function getAvailableMonths()
+    {
+        try {
+            $months = TagihanPerusahaan::select(
+                    'tagihan_bulan',
+                    DB::raw('COUNT(*) as jumlah_karyawan'),
+                    DB::raw('SUM(upah_total) as total_tagihan')
+                )
+                ->groupBy('tagihan_bulan')
+                ->orderBy('tagihan_bulan', 'desc')
+                ->get()
+                ->map(function ($item) {
+                    $bulan = Carbon::parse($item->tagihan_bulan);
+                    return [
+                        'value' => $bulan->format('Y-m'),
+                        'bulan' => $bulan->format('n'),
+                        'tahun' => $bulan->format('Y'),
+                        'text' => $this->getBulanIndonesia($bulan->format('n')) . ' ' . $bulan->format('Y'),
+                        'label' => $this->getBulanIndonesia($bulan->format('n')) . ' ' . $bulan->format('Y'),
+                        'jumlah_karyawan' => $item->jumlah_karyawan,
+                        'total_tagihan' => $item->total_tagihan,
+                        'total_tagihan_formatted' => 'Rp ' . number_format($item->total_tagihan, 0, ',', '.'),
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Daftar bulan tagihan perusahaan berhasil diambil',
+                'data' => $months
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengambil daftar bulan tagihan perusahaan',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Copy data dari bulan sebelumnya
+     */
+    public function copyFromPreviousMonth(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'periode_awal' => 'required|date',
-            'periode_akhir' => 'required|date',
-            'format' => 'sometimes|in:pdf,excel'
+            'bulan_referensi' => 'required|date_format:Y-m',
+            'bulan_tujuan' => 'required|date_format:Y-m|after:bulan_referensi',
+            'karyawan_id' => 'nullable|array',
+            'karyawan_id.*' => 'exists:karyawans,id',
+            'reset_lembur_thr' => 'nullable|boolean',
+            'reset_seragam_fee' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -519,39 +691,310 @@ class TagihanPerusahaanController extends Controller
         }
 
         try {
-            $tagihan = TagihanPerusahaan::with('karyawan')
-                ->periode($request->periode_awal, $request->periode_akhir)
-                ->orderBy('nama')
-                ->get();
-            
-            if ($tagihan->isEmpty()) {
+            DB::beginTransaction();
+
+            // Parse bulan
+            $bulanReferensi = Carbon::parse($request->bulan_referensi . '-01')->startOfMonth();
+            $bulanTujuan = Carbon::parse($request->bulan_tujuan . '-01')->startOfMonth();
+
+            // Validasi bulan tujuan harus setelah bulan referensi
+            if ($bulanTujuan->lte($bulanReferensi)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Tidak ada data tagihan untuk periode tersebut'
+                    'message' => 'Bulan tujuan harus setelah bulan referensi'
+                ], 422);
+            }
+
+            // Query data referensi
+            $query = TagihanPerusahaan::whereYear('tagihan_bulan', $bulanReferensi->year)
+                ->whereMonth('tagihan_bulan', $bulanReferensi->month);
+
+            if ($request->has('karyawan_id') && !empty($request->karyawan_id)) {
+                $query->whereIn('karyawan_id', $request->karyawan_id);
+            }
+
+            $referensiData = $query->with('karyawan')->get();
+
+            if ($referensiData->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada data tagihan pada bulan ' . 
+                        $this->getBulanIndonesia($bulanReferensi->format('n')) . ' ' . $bulanReferensi->format('Y')
                 ], 404);
             }
-            
-            // Return data for now - bisa di-extend untuk generate PDF/Excel
-            return response()->json([
+
+            // Cek data yang sudah ada di bulan tujuan
+            $karyawanIdList = $referensiData->pluck('karyawan_id')->toArray();
+            $existingData = TagihanPerusahaan::whereIn('karyawan_id', $karyawanIdList)
+                ->whereYear('tagihan_bulan', $bulanTujuan->year)
+                ->whereMonth('tagihan_bulan', $bulanTujuan->month)
+                ->pluck('karyawan_id')
+                ->toArray();
+
+            $created = [];
+            $skipped = [];
+            $resetLemburThr = $request->get('reset_lembur_thr', true);
+            $resetSeragamFee = $request->get('reset_seragam_fee', true);
+
+            foreach ($referensiData as $referensi) {
+                // Skip jika sudah ada di bulan tujuan
+                if (in_array($referensi->karyawan_id, $existingData)) {
+                    $skipped[] = [
+                        'karyawan_id' => $referensi->karyawan_id,
+                        'nama' => optional($referensi->karyawan)->nama_lengkap,
+                        'message' => 'Sudah memiliki tagihan untuk bulan ' .
+                            $this->getBulanIndonesia($bulanTujuan->format('n')) . ' ' . $bulanTujuan->format('Y')
+                    ];
+                    continue;
+                }
+
+                // ✅ Cek apakah karyawan sudah dihapus (soft delete)
+                $karyawan = Karyawan::withTrashed()->find($referensi->karyawan_id);
+                if ($karyawan && $karyawan->trashed()) {
+                    $skipped[] = [
+                        'karyawan_id' => $referensi->karyawan_id,
+                        'nama' => $karyawan->nama_lengkap,
+                        'message' => 'Data tagihan tidak dapat dibuat karena karyawan "' . $karyawan->nama_lengkap . '" (' . $karyawan->nomor_induk . ') sudah dihapus dari sistem.'
+                    ];
+                    continue;
+                }
+
+                // Siapkan data baru
+                $dataBaru = [
+                    'karyawan_id' => $referensi->karyawan_id,
+                    'jumlah_penghasilan_kotor' => $referensi->jumlah_penghasilan_kotor,
+                    'jumlah_hari_kerja' => $referensi->jumlah_hari_kerja,
+                    'gaji_harian' => $referensi->gaji_harian,
+                    'tagihan_bulan' => $bulanTujuan->format('Y-m-d'),
+                    'admin_id' => $request->user()->id,
+                    'updated_by' => $request->user()->id,
+                ];
+
+                // Handle jlh_lembur dan THR
+                if ($resetLemburThr) {
+                    $dataBaru['jlh_lembur'] = 0;
+                    $dataBaru['thr'] = 0;
+                } else {
+                    $dataBaru['jlh_lembur'] = $referensi->jlh_lembur ?? 0;
+                    $dataBaru['thr'] = $referensi->thr ?? 0;
+                }
+
+                // Handle seragam dan fee manajemen
+                if ($resetSeragamFee) {
+                    $dataBaru['seragam_cs_dan_keamanan'] = 0;
+                    $dataBaru['fee_manajemen'] = 0;
+                } else {
+                    $dataBaru['seragam_cs_dan_keamanan'] = $referensi->seragam_cs_dan_keamanan ?? 0;
+                    $dataBaru['fee_manajemen'] = $referensi->fee_manajemen ?? 0;
+                }
+
+                // Biarkan model menghitung field otomatis
+                $tagihanBaru = TagihanPerusahaan::create($dataBaru);
+                $tagihanBaru->refresh(); // Ambil hasil perhitungan
+                $created[] = $tagihanBaru;
+            }
+
+            DB::commit();
+
+            $response = [
                 'success' => true,
-                'message' => 'Data tagihan berhasil diambil',
+                'message' => count($created) . ' data tagihan berhasil disalin',
                 'data' => [
-                    'periode' => [
-                        'awal' => $request->periode_awal,
-                        'akhir' => $request->periode_akhir
+                    'bulan_referensi' => [
+                        'value' => $bulanReferensi->format('Y-m'),
+                        'text' => $this->getBulanIndonesia($bulanReferensi->format('n')) . ' ' . $bulanReferensi->format('Y'),
                     ],
-                    'total_records' => $tagihan->count(),
-                    'total_tagihan' => $tagihan->sum('total_diterima'),
-                    'tagihan' => TagihanPerusahaanResource::collection($tagihan)
+                    'bulan_tujuan' => [
+                        'value' => $bulanTujuan->format('Y-m'),
+                        'text' => $this->getBulanIndonesia($bulanTujuan->format('n')) . ' ' . $bulanTujuan->format('Y'),
+                    ],
+                    'created_count' => count($created),
+                    'skipped_count' => count($skipped),
+                    'created' => TagihanPerusahaanResource::collection(collect($created)),
                 ]
-            ]);
-            
+            ];
+
+            if (!empty($skipped)) {
+                $response['data']['skipped'] = $skipped;
+                $response['message'] .= ', ' . count($skipped) . ' data dilewati karena sudah ada';
+            }
+
+            return response()->json($response, 201);
+
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mengekspor data tagihan',
+                'message' => 'Gagal menyalin data tagihan',
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Preview copy data
+     */
+    public function previewCopy(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'bulan_referensi' => 'required|date_format:Y-m',
+            'bulan_tujuan' => 'required|date_format:Y-m|after:bulan_referensi',
+            'karyawan_id' => 'nullable|array',
+            'karyawan_id.*' => 'exists:karyawans,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $bulanReferensi = Carbon::parse($request->bulan_referensi . '-01')->startOfMonth();
+            $bulanTujuan = Carbon::parse($request->bulan_tujuan . '-01')->startOfMonth();
+
+            // Query data referensi
+            $query = TagihanPerusahaan::whereYear('tagihan_bulan', $bulanReferensi->year)
+                ->whereMonth('tagihan_bulan', $bulanReferensi->month);
+
+            if ($request->has('karyawan_id') && !empty($request->karyawan_id)) {
+                $query->whereIn('karyawan_id', $request->karyawan_id);
+            }
+
+            $referensiData = $query->with('karyawan')->get();
+
+            if ($referensiData->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada data tagihan pada bulan ' . 
+                        $this->getBulanIndonesia($bulanReferensi->format('n')) . ' ' . $bulanReferensi->format('Y')
+                ], 404);
+            }
+
+            // Cek data yang sudah ada di bulan tujuan
+            $karyawanIdList = $referensiData->pluck('karyawan_id')->toArray();
+            $existingData = TagihanPerusahaan::whereIn('karyawan_id', $karyawanIdList)
+                ->whereYear('tagihan_bulan', $bulanTujuan->year)
+                ->whereMonth('tagihan_bulan', $bulanTujuan->month)
+                ->pluck('karyawan_id')
+                ->toArray();
+
+            $willBeCreated = [];
+            $willBeSkipped = [];
+
+            foreach ($referensiData as $referensi) {
+                $data = [
+                    'karyawan_id' => $referensi->karyawan_id,
+                    'nama' => optional($referensi->karyawan)->nama,
+                    'posisi' => optional($referensi->karyawan)->posisi,
+                    'posisi_label' => $this->getPosisiLabel(optional($referensi->karyawan)->posisi),
+                    'jumlah_penghasilan_kotor' => $referensi->jumlah_penghasilan_kotor,
+                    'jumlah_penghasilan_kotor_formatted' => 'Rp ' . number_format($referensi->jumlah_penghasilan_kotor, 0, ',', '.'),
+                    'gaji_harian' => $referensi->gaji_harian,
+                    'gaji_harian_formatted' => 'Rp ' . number_format($referensi->gaji_harian, 0, ',', '.'),
+                    'jumlah_hari_kerja' => $referensi->jumlah_hari_kerja,
+                    'jlh_lembur' => $referensi->jlh_lembur ?? 0,
+                    'jlh_lembur_formatted' => 'Rp ' . number_format($referensi->jlh_lembur ?? 0, 0, ',', '.'),
+                    'thr' => $referensi->thr ?? 0,
+                    'thr_formatted' => 'Rp ' . number_format($referensi->thr ?? 0, 0, ',', '.'),
+                    'seragam_cs_dan_keamanan' => $referensi->seragam_cs_dan_keamanan ?? 0,
+                    'seragam_formatted' => 'Rp ' . number_format($referensi->seragam_cs_dan_keamanan ?? 0, 0, ',', '.'),
+                    'fee_manajemen' => $referensi->fee_manajemen ?? 0,
+                    'fee_formatted' => 'Rp ' . number_format($referensi->fee_manajemen ?? 0, 0, ',', '.'),
+                    'upah_diterima_pekerja' => $referensi->upah_diterima_pekerja ?? 0,
+                    'upah_diterima_formatted' => 'Rp ' . number_format($referensi->upah_diterima_pekerja ?? 0, 0, ',', '.'),
+                    'upah_total' => $referensi->upah_total ?? 0,
+                    'upah_total_formatted' => 'Rp ' . number_format($referensi->upah_total ?? 0, 0, ',', '.'),
+                ];
+
+                if (in_array($referensi->karyawan_id, $existingData)) {
+                    $willBeSkipped[] = $data;
+                } else {
+                    $willBeCreated[] = $data;
+                }
+            }
+
+            // Hitung summary
+            $totalPenghasilanKotor = $referensiData->sum('jumlah_penghasilan_kotor');
+            $totalUpahDiterima = $referensiData->sum('upah_diterima_pekerja');
+            $totalTagihan = $referensiData->sum('upah_total');
+            
+            $totalBPJS = $referensiData->sum(function($item) {
+                return ($item->bpjs_kesehatan ?? 0) + 
+                       ($item->jkk ?? 0) + 
+                       ($item->jkm ?? 0) + 
+                       ($item->jht ?? 0) + 
+                       ($item->jp ?? 0) ;
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Preview copy data tagihan',
+                'data' => [
+                    'bulan_referensi' => [
+                        'value' => $bulanReferensi->format('Y-m'),
+                        'text' => $this->getBulanIndonesia($bulanReferensi->format('n')) . ' ' . $bulanReferensi->format('Y'),
+                    ],
+                    'bulan_tujuan' => [
+                        'value' => $bulanTujuan->format('Y-m'),
+                        'text' => $this->getBulanIndonesia($bulanTujuan->format('n')) . ' ' . $bulanTujuan->format('Y'),
+                    ],
+                    'summary_referensi' => [
+                        'total_karyawan' => $referensiData->count(),
+                        'total_penghasilan_kotor' => $totalPenghasilanKotor,
+                        'total_penghasilan_kotor_formatted' => 'Rp ' . number_format($totalPenghasilanKotor, 0, ',', '.'),
+                        'total_bpjs' => $totalBPJS,
+                        'total_bpjs_formatted' => 'Rp ' . number_format($totalBPJS, 0, ',', '.'),
+                        'total_upah_diterima' => $totalUpahDiterima,
+                        'total_upah_diterima_formatted' => 'Rp ' . number_format($totalUpahDiterima, 0, ',', '.'),
+                        'total_tagihan' => $totalTagihan,
+                        'total_tagihan_formatted' => 'Rp ' . number_format($totalTagihan, 0, ',', '.'),
+                    ],
+                    'will_be_created' => $willBeCreated,
+                    'will_be_created_count' => count($willBeCreated),
+                    'will_be_skipped' => $willBeSkipped,
+                    'will_be_skipped_count' => count($willBeSkipped),
+                    'total_referensi' => $referensiData->count()
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat preview',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Helper function untuk nama bulan Indonesia
+     */
+    private function getBulanIndonesia($bulan)
+    {
+        $bulanIndo = [
+            1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
+            5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
+            9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
+        ];
+        return $bulanIndo[(int)$bulan] ?? '';
+    }
+
+    /**
+     * Helper function untuk mendapatkan label posisi
+     */
+    private function getPosisiLabel($posisi)
+    {
+        $labels = [
+            'jasa' => 'JASA',
+            'supir' => 'SUPIR',
+            'keamanan' => 'KEAMANAN',
+            'cleaning_service' => 'CLEANING SERVICE',
+            'operator' => 'OPERATOR'
+        ];
+        
+        return $labels[$posisi] ?? strtoupper($posisi);
     }
 }

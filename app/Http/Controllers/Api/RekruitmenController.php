@@ -41,8 +41,9 @@ public function index(Request $request)
         // Cek jika data tidak ditemukan
         if ($rekruitmen->isEmpty()) {
             return response()->json([
-                'success' => false,
-                'message' => 'Sejauh ini belum ada yang mengajukan lamaran'
+                'success' => true,
+                'message' => 'Sejauh ini belum ada yang mengajukan lamaran',
+                'data' => []
             ], 200);
         }
 
@@ -56,7 +57,19 @@ public function index(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'lowongan_kerja_id' => 'required|exists:lowongan_kerja,id',
-            'nik' => 'required|string|unique:rekruitmen,nik|max:16',
+            'nik' => [
+                'required',
+                'string',
+                'max:16',
+                function ($attribute, $value, $fail) use ($request) {
+                    $exists = Rekruitmen::where('nik', $value)
+                        ->where('lowongan_kerja_id', $request->lowongan_kerja_id)
+                        ->exists();
+                    if ($exists) {
+                        $fail('Anda sudah perna melamar di lowongan yang sama sebelumnya.');
+                    }
+                },
+            ],
             'nama' => 'required|string|max:255',
             'nama_lengkap' => 'required|string|max:255',
             'posisi_dilamar' => 'required|string|max:255',
@@ -80,8 +93,8 @@ public function index(Request $request)
             ], 422);
         }
 
-        // Cek apakah lowongan masih aktif
-        $lowongan = LowonganKerja::find($request->lowongan_kerja_id);
+        // Cek apakah lowongan masih aktif — gunakan findOrFail untuk hindari null pointer
+        $lowongan = LowonganKerja::findOrFail($request->lowongan_kerja_id);
         if ($lowongan->status_lowongan !== 'aktif' || $lowongan->deadline_lowongan < now()) {
             return response()->json([
                 'success' => false,
@@ -100,15 +113,15 @@ public function index(Request $request)
             }
         }
 
-        // Generate token pendaftaran
-        $data['token_pendaftaran'] = Str::random(32);
+        // Generate token pendaftaran — uuid dijamin unik
+        $data['token_pendaftaran'] = (string) Str::uuid();
 
         $rekruitmen = Rekruitmen::create($data);
 
         return response()->json([
             'success' => true,
             'message' => 'Pendaftaran berhasil',
-            'data' => new RekruitmenResource($rekruitmen->load('lowonganKerja'))
+            'data' => new RekruitmenResource($rekruitmen)
         ], 201);
     }
 
@@ -156,6 +169,15 @@ public function index(Request $request)
             'alamat' => 'nullable|string',
             'status_terima' => 'sometimes|required|in:pending,diterima,ditolak',
             'catatan' => 'nullable|string',
+            // File dokumen opsional saat update
+            'foto_ktp' => 'sometimes|image|mimes:jpeg,png,jpg|max:2048',
+            'foto_kk' => 'sometimes|image|mimes:jpeg,png,jpg|max:2048',
+            'foto_skck' => 'sometimes|image|mimes:jpeg,png,jpg|max:2048',
+            'pas_foto' => 'sometimes|image|mimes:jpeg,png,jpg|max:2048',
+            'surat_sehat' => 'sometimes|file|mimes:pdf,jpeg,png,jpg|max:2048',
+            'surat_anti_narkoba' => 'sometimes|file|mimes:pdf,jpeg,png,jpg|max:2048',
+            'surat_lamaran' => 'sometimes|file|mimes:pdf|max:2048',
+            'cv' => 'sometimes|file|mimes:pdf|max:2048',
         ]);
 
         if ($validator->fails()) {
@@ -166,7 +188,21 @@ public function index(Request $request)
             ], 422);
         }
 
-        $rekruitmen->update($request->all());
+        $data = $request->except(['foto_ktp', 'foto_kk', 'foto_skck', 'pas_foto', 'surat_sehat', 'surat_anti_narkoba', 'surat_lamaran', 'cv']);
+
+        // Handle file upload — hapus file lama jika ada file baru
+        $files = ['foto_ktp', 'foto_kk', 'foto_skck', 'pas_foto', 'surat_sehat', 'surat_anti_narkoba', 'surat_lamaran', 'cv'];
+        foreach ($files as $file) {
+            if ($request->hasFile($file)) {
+                // Hapus file lama
+                if ($rekruitmen->$file && Storage::disk('public')->exists($rekruitmen->$file)) {
+                    Storage::disk('public')->delete($rekruitmen->$file);
+                }
+                $data[$file] = $request->file($file)->store('rekruitmen', 'public');
+            }
+        }
+
+        $rekruitmen->update($data);
 
         return response()->json([
             'success' => true,

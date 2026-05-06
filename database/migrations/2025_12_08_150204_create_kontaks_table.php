@@ -15,10 +15,14 @@ return new class extends Migration
             $table->id();
             $table->string('nama');
             $table->string('email');
+            $table->string('no_wa');
             $table->string('perusahaan')->nullable();
             $table->string('subjek');
-            $table->string('isi');
-            $table->string('status_dibaca');
+            $table->text('isi');  // text lebih tepat untuk isi pesan panjang
+            $table->enum('status_dibaca', ['pending', 'dibaca'])->default('pending');
+            $table->timestamp('dibaca_pada')->nullable(); // kapan pesan dibaca
+            $table->unsignedBigInteger('admin_id')->nullable(); // admin yang membaca
+            $table->foreign('admin_id')->references('id')->on('users')->onDelete('set null');
             $table->timestamps();
             $table->softDeletes();
         });

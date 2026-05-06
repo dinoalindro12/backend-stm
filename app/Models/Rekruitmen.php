@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Rekruitmen extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'rekruitmen';
 
@@ -30,6 +32,7 @@ class Rekruitmen extends Model
         'token_pendaftaran',
         'status_terima',
         'catatan',
+        'admin_id', 
     ];
 
     protected $casts = [
@@ -38,10 +41,20 @@ class Rekruitmen extends Model
     ];
 
     /**
-     * Relasi dengan Lowongan Kerja
+     * Relasi dengan Admin (User)
+     * Rekruitmen dikelola oleh seorang Admin
      */
-    public function lowonganKerja()
+    public function admin(): BelongsTo
     {
-        return $this->belongsTo(LowonganKerja::class);
+        return $this->belongsTo(User::class, 'admin_id');
+    }
+
+    /**
+     * Relasi dengan Lowongan Kerja
+     * (Pastikan kolom lowongan_kerja_id ada di tabel rekruitmen)
+     */
+    public function lowonganKerja(): BelongsTo
+    {
+        return $this->belongsTo(LowonganKerja::class, 'lowongan_kerja_id');
     }
 }

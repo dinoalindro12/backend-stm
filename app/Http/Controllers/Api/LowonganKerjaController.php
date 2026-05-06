@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\LowongankerjapublicResource;
 use App\Http\Resources\LowonganKerjaResource;
 use App\Models\LowonganKerja;
 use Illuminate\Http\Request;
@@ -37,18 +38,21 @@ class LowonganKerjaController extends Controller
             $query->aktif();
         }
 
+        if ($request->has('admin_id')) {
+            $query->where('admin_id', $request->admin_id);
+        }
         $lowongan = $query->latest()->paginate($request->per_page ?? 10);
 
         return LowonganKerjaResource::collection($lowongan);
     }
 
     /**
-     * Store a newly created resource in storage.
+     * memasukan data baru ke penyimpanan.
      */
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'posisi' => 'required|in:Cleaning Service,Supir,Keamanan,Operator,Jasa',
+            'posisi' => 'required|in:cleaning_service,supir,keamanan,operator,jasa',
             'lokasi_kerja' => 'required|string|max:255',
             'jenis_kerja' => 'required|in:Full Time,Part Time',
             'catatan' => 'nullable|string',
@@ -65,7 +69,10 @@ class LowonganKerjaController extends Controller
             ], 422);
         }
 
-        $lowongan = LowonganKerja::create($request->all());
+        $data = $request->all();
+        $data['admin_id'] = $request->user()->id;
+
+        $lowongan = LowonganKerja::create($data);
 
         return response()->json([
             'success' => true,
@@ -75,7 +82,7 @@ class LowonganKerjaController extends Controller
     }
 
     /**
-     * Display the specified resource.
+     * menampilkan resource tertentu di db.
      */
     public function show(string $id)
     {
@@ -109,7 +116,7 @@ class LowonganKerjaController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'posisi' => 'sometimes|required|in:Cleaning Service,Supir,Keamanan,Operator,Jasa',
+            'posisi' => 'sometimes|required|in:cleaning_service,supir,keamanan,operator,jasa',
             'lokasi_kerja' => 'sometimes|required|string|max:255',
             'jenis_kerja' => 'sometimes|required|in:Full Time,Part Time',
             'catatan' => 'nullable|string',
@@ -200,14 +207,13 @@ public function getLowonganAktif(Request $request)
     if ($request->has('lokasi')) {
         $query->where('lokasi_kerja', 'like', '%' . $request->lokasi . '%');
     }
-
     // Search
     if ($request->has('search')) {
         $search = $request->search;
         $query->where(function($q) use ($search) {
             $q->where('posisi', 'like', '%' . $search . '%')
-              ->orWhere('lokasi_kerja', 'like', '%' . $search . '%')
-              ->orWhere('range_gaji', 'like', '%' . $search . '%');
+            ->orWhere('lokasi_kerja', 'like', '%' . $search . '%')
+            ->orWhere('range_gaji', 'like', '%' . $search . '%');
         });
     }
 
@@ -216,7 +222,7 @@ public function getLowonganAktif(Request $request)
     return response()->json([
         'success' => true,
         'message' => 'Lowongan kerja aktif berhasil diambil',
-        'data' => LowonganKerjaResource::collection($lowongan),
+        'data' => LowongankerjapublicResource::collection($lowongan),
         'meta' => [
             'current_page' => $lowongan->currentPage(),
             'last_page' => $lowongan->lastPage(),
@@ -246,7 +252,7 @@ public function detailLowongan(string $id)
     return response()->json([
         'success' => true,
         'message' => 'Detail lowongan berhasil diambil',
-        'data' => new LowonganKerjaResource($lowongan)
+        'data' => new LowongankerjapublicResource($lowongan)
     ]);
 }
 

@@ -12,14 +12,17 @@ return new class extends Migration
     {
         Schema::create('lowongan_kerja', function (Blueprint $table) {
             $table->id();
-            $table->enum('posisi', ['Cleaning Service', 'Supir', 'Keamanan', 'Operator', 'Jasa']);
+            $table->enum('posisi', ['cleaning_service', 'supir', 'keamanan', 'operator', 'jasa']);
             $table->string('lokasi_kerja');
             $table->enum('jenis_kerja', ['Full Time', 'Part Time']);
             $table->text('catatan')->nullable();
             $table->string('range_gaji');
             $table->date('deadline_lowongan');
             $table->enum('status_lowongan', ['aktif', 'tidak_aktif'])->default('aktif');
+            $table->unsignedBigInteger('admin_id')->nullable();
+            $table->foreign('admin_id')->references('id')->on('users')->onDelete('set null');
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

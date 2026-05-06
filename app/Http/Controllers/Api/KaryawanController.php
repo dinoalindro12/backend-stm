@@ -15,6 +15,7 @@ use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Storage;
 use App\Http\Resources\KaryawanResource;
 use Illuminate\Support\Facades\Validator;
+use App\Imports\KaryawanImport;
 
 
 
@@ -26,44 +27,44 @@ class KaryawanController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = Karyawan::query();
-            
+            $query = Karyawan::with(['admin', 'updatedBy']);
+
             // Filter berdasarkan status aktif
             if ($request->has('status_aktif')) {
                 $query->where('status_aktif', $request->status_aktif);
             }
-            
+
             // Filter berdasarkan posisi
             if ($request->filled('posisi')) {
                 $query->where('posisi', $request->posisi);
             }
-            
+
             // Search
             if ($request->filled('search')) {
                 $search = $request->search;
-                $query->where(function($q) use ($search) {
+                $query->where(function ($q) use ($search) {
                     $q->where('nomor_induk', 'like', "%{$search}%")
-                      ->orWhere('nik', 'like', "%{$search}%")
-                      ->orWhere('nama_lengkap', 'like', "%{$search}%")
-                      ->orWhere('email', 'like', "%{$search}%")
-                      ->orWhere('no_wa', 'like', "%{$search}%");
+                        ->orWhere('nik', 'like', "%{$search}%")
+                        ->orWhere('nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('no_wa', 'like', "%{$search}%");
                 });
             }
-            
+
             // Sorting
             $sortField = $request->get('sort_by', 'created_at');
             $sortOrder = $request->get('sort_order', 'desc');
             $query->orderBy($sortField, $sortOrder);
-            
+
             // Pagination
             $perPage = $request->get('per_page', 10);
             $karyawan = $query->paginate($perPage);
-            
+
             return KaryawanResource::collection($karyawan)->additional([
                 'success' => true,
                 'message' => 'List Data Karyawan'
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -82,25 +83,24 @@ class KaryawanController extends Controller
         
         try {
             $validator = Validator::make($request->all(), [
-                'nomor_induk'   => 'required|unique:karyawans,nomor_induk|string|max:12',
-                'nik'           => 'required|unique:karyawans,nik|string|max:20',
-                'no_rek_bri'    => 'required|unique:karyawans,no_rek_bri|string|max:30',
+                'nik'           => 'required|unique:karyawans,nik|string|regex:/^[0-9]+$/|max:16',
+                'no_rek_bri'    => 'nullable|unique:karyawans,no_rek_bri|string|regex:/^[0-9]+$/|max:15',
                 'nama_lengkap'  => 'required|string|max:100',
                 'posisi'        => 'required|string|in:jasa,supir,keamanan,cleaning_service,operator',
                 'email'         => 'nullable|email|unique:karyawans,email|max:100',
                 'alamat'        => 'required|string',
-                'no_wa'         => 'nullable|string|max:15',
-                'image'         => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120', // 5MB
+                'no_wa'         => 'required|string|regex:/^[0-9]+$/|max:15',
+                'image'         => 'nullable|image|mimes:jpeg,png,jpg,svg,webp|max:5120', // 5MB
                 'tanggal_masuk' => 'required|date',
                 'tanggal_keluar'=> 'nullable|date|after_or_equal:tanggal_masuk',
                 'status_aktif'  => 'required|boolean',
             ], [
-                'nomor_induk.unique' => 'Nomor induk sudah terdaftar',
-                'nik.unique' => 'NIK sudah terdaftar',
-                'no_rek_bri.unique' => 'No Rekening BRI sudah terdaftar',
-                'email.unique' => 'Email sudah terdaftar',
-                'image.max' => 'Ukuran gambar maksimal 5MB',
-                'image.mimes' => 'Format gambar harus jpeg, png, jpg, gif, svg, atau webp',
+                'nik.unique' => 'Maaf, NIK sudah terdaftar',
+                'no_rek_bri.unique' => 'Maaf, nomor Rekening BRI sudah terdaftar',
+                'email.unique' => 'Maaf, email sudah terdaftar',
+                'image.max' => 'Maaf, ukuran gambar maksimal 5MB',
+                'image.mimes' => 'Maaf, format gambar harus jpeg, png, jpg, svg, atau webp',
+                'no_wa.unique' => 'Maaf, nomor  WhatsApp yang anda masukan sudah terdaftar',
             ]);
 
             if ($validator->fails()) {
@@ -112,8 +112,10 @@ class KaryawanController extends Controller
             }
 
             $data = $validator->validated();
-            
-            // Upload foto jika ada
+
+            // Catat admin yang menambahkan
+            $data['admin_id'] = $request->user()->id;
+            $data['updated_by'] = $request->user()->id;
             if ($request->hasFile('image')) {
                 $image = $request->file('image');
                 $imageName = Str::random(40) . '.' . $image->getClientOriginalExtension();
@@ -131,10 +133,10 @@ class KaryawanController extends Controller
 
             // Simpan data
             $karyawan = Karyawan::create($data);
-            
+
             DB::commit();
 
-            return (new KaryawanResource($karyawan))->additional([
+            return (new KaryawanResource($karyawan->load(['admin', 'updatedBy'])))->additional([
                 'success' => true,
                 'message' => 'Data karyawan berhasil disimpan'
             ]);
@@ -161,17 +163,20 @@ class KaryawanController extends Controller
     public function show($id)
     {
         try {
-            $karyawan = Karyawan::find($id);
-            
+            $karyawan = Karyawan::with(['admin', 'updatedBy'])->find($id);
+
             if (!$karyawan) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Data karyawan tidak ditemukan'
                 ], 404);
             }
-            
-            return (new KaryawanResource($karyawan));
-            
+
+            return (new KaryawanResource($karyawan->load(['admin', 'updatedBy'])))->additional([
+                'success' => true,
+                'message' => 'Detail data karyawan'
+            ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -199,25 +204,23 @@ class KaryawanController extends Controller
             }
 
             $validator = Validator::make($request->all(), [
-                'nomor_induk'   => 'nullable|required|unique:karyawans,nomor_induk,' . $karyawan->id . '|string|max:12',
-                'nik'           => 'nullable|required|unique:karyawans,nik,' . $karyawan->id . '|string|max:20',
-                'no_rek_bri'    => 'nullable|required|unique:karyawans,no_rek_bri,' . $karyawan->id . '|string|max:30',
-                'nama_lengkap'  => 'nullable|required|string|max:100',
-                'posisi'        => 'nullable|required|string|in:jasa,supir,keamanan,cleaning_service,operator',
+                'nik'           => 'sometimes|required|unique:karyawans,nik,' . $karyawan->id . '|string|regex:/^[0-9]+$/|max:16',
+                'no_rek_bri'    => 'nullable|unique:karyawans,no_rek_bri,' . $karyawan->id . '|string|regex:/^[0-9]+$/|max:15',
+                'nama_lengkap'  => 'sometimes|required|string|max:100',
+                'posisi'        => 'sometimes|required|string|in:jasa,supir,keamanan,cleaning_service,operator',
                 'email'         => 'nullable|email|unique:karyawans,email,' . $karyawan->id . '|max:100',
-                'alamat'        => 'nullable|required|string',
-                'no_wa'         => 'nullable|string|max:15',
-                'image'         => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
-                'tanggal_masuk' => 'nullable|required|date',
+                'alamat'        => 'sometimes|required|string',
+                'no_wa'         => 'sometimes|string|regex:/^[0-9]+$/|max:15',
+                'image'         => 'nullable|image|mimes:jpeg,png,jp,svg,webp|max:5120',
+                'tanggal_masuk' => 'sometimes|required|date',
                 'tanggal_keluar'=> 'nullable|date|after_or_equal:tanggal_masuk',
-                'status_aktif'  => 'nullable|required|boolean',
+                'status_aktif'  => 'sometimes|required|boolean',
             ], [
-                'nomor_induk.unique' => 'Nomor induk sudah terdaftar',
                 'nik.unique' => 'NIK sudah terdaftar',
                 'no_rek_bri.unique' => 'No Rekening BRI sudah terdaftar',
                 'email.unique' => 'Email sudah terdaftar',
                 'image.max' => 'Ukuran gambar maksimal 5MB',
-                'image.mimes' => 'Format gambar harus jpeg, png, jpg, gif, svg, atau webp',
+                'image.mimes' => 'Format gambar harus jpeg, png, jpg, svg, atau webp',
             ]);
 
             if ($validator->fails()) {
@@ -229,12 +232,16 @@ class KaryawanController extends Controller
             }
 
             $data = $validator->validated();
-            
+
+            // Catat admin yang melakukan perubahan
+            $data['updated_by'] = $request->user()->id;
+
             // Tangani upload foto baru
             if ($request->hasFile('image')) {
-                // Hapus foto lama jika ada
-                if ($karyawan->image && Storage::disk('public')->exists($karyawan->image)) {
-                    Storage::disk('public')->delete($karyawan->image);
+                // Hapus foto lama — gunakan getRawOriginal agar tidak kena accessor URL
+                $oldImage = $karyawan->getRawOriginal('image');
+                if ($oldImage && Storage::disk('public')->exists($oldImage)) {
+                    Storage::disk('public')->delete($oldImage);
                 }
                 
                 $image = $request->file('image');
@@ -247,18 +254,19 @@ class KaryawanController extends Controller
             
             // Hapus foto jika request memiliki remove_image
             if ($request->has('remove_image') && $request->remove_image == true) {
-                if ($karyawan->image && Storage::disk('public')->exists($karyawan->image)) {
-                    Storage::disk('public')->delete($karyawan->image);
+                $oldImage = $karyawan->getRawOriginal('image');
+                if ($oldImage && Storage::disk('public')->exists($oldImage)) {
+                    Storage::disk('public')->delete($oldImage);
                 }
                 $data['image'] = null;
             }
             
             // Update data
             $karyawan->update($data);
-            
+
             DB::commit();
 
-            return (new KaryawanResource($karyawan))->additional([
+            return (new KaryawanResource($karyawan->load(['admin', 'updatedBy'])))->additional([
                 'success' => true,
                 'message' => 'Data karyawan berhasil diupdate'
             ]);
@@ -290,13 +298,9 @@ class KaryawanController extends Controller
                     'message' => 'Data karyawan tidak ditemukan'
                 ], 404);
             }
-            // Hapus foto jika ada
-            if ($karyawan->image && Storage::disk('public')->exists($karyawan->image)) {
-                Storage::disk('public')->delete($karyawan->image);
-            }
-            
-            // Soft delete
-            $karyawan->delete($id);
+
+            // Soft delete — foto TIDAK dihapus agar bisa dipulihkan saat restore
+            $karyawan->delete();
             
             DB::commit();
 
@@ -338,14 +342,9 @@ class KaryawanController extends Controller
             }
             
             $karyawans = Karyawan::whereIn('id', $request->ids)->get();
-            
-            // Hapus foto-foto
-            foreach ($karyawans as $karyawan) {
-                if ($karyawan->image && Storage::disk('public')->exists($karyawan->image)) {
-                    Storage::disk('public')->delete($karyawan->image);
-                }
-            }
-            
+
+            // Soft delete — foto TIDAK dihapus agar bisa dipulihkan saat restore
+
             // Soft delete
             $deleted = Karyawan::whereIn('id', $request->ids)->delete();
             
@@ -392,10 +391,10 @@ class KaryawanController extends Controller
             }
             
             $karyawan->restore();
-            
+
             DB::commit();
 
-            return response()->json([
+            return (new KaryawanResource($karyawan->load(['admin', 'updatedBy'])))->additional([
                 'success' => true,
                 'message' => 'Data karyawan berhasil dipulihkan'
             ]);
@@ -448,6 +447,57 @@ class KaryawanController extends Controller
     }
 
     /**
+     * Hard delete karyawan — hapus permanen beserta foto
+     * Hanya dipanggil setelah soft delete
+     */
+    public function forceDelete($id)
+    {
+        DB::beginTransaction();
+
+        try {
+            $karyawan = Karyawan::withTrashed()->find($id);
+
+            if (!$karyawan) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data karyawan tidak ditemukan'
+                ], 404);
+            }
+
+            if (!$karyawan->trashed()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Hapus data terlebih dahulu sebelum menghapus permanen'
+                ], 400);
+            }
+
+            // Hapus foto dari storage
+            if ($karyawan->getRawOriginal('image') &&
+                Storage::disk('public')->exists($karyawan->getRawOriginal('image'))) {
+                Storage::disk('public')->delete($karyawan->getRawOriginal('image'));
+            }
+
+            $karyawan->forceDelete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data karyawan berhasil dihapus permanen'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus data permanen',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
      * Upload image only
      */
     public function uploadImage(Request $request, $id)
@@ -465,7 +515,7 @@ class KaryawanController extends Controller
             }
             
             $validator = Validator::make($request->all(), [
-                'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
+                'image' => 'required|image|mimes:jpeg,png,jp,svg,webp|max:5120',
             ]);
             
             if ($validator->fails()) {
@@ -476,29 +526,30 @@ class KaryawanController extends Controller
                 ], 422);
             }
             
-            // Hapus foto lama jika ada
-            if ($karyawan->image && Storage::disk('public')->exists($karyawan->image)) {
-                Storage::disk('public')->delete($karyawan->image);
+            // Hapus foto lama jika ada — gunakan getRawOriginal agar tidak kena accessor URL
+            $oldImage = $karyawan->getRawOriginal('image');
+            if ($oldImage && Storage::disk('public')->exists($oldImage)) {
+                Storage::disk('public')->delete($oldImage);
             }
-            
+
             // Upload foto baru
             $image = $request->file('image');
             $imageName = Str::random(40) . '.' . $image->getClientOriginalExtension();
             $imagePath = 'karyawans/' . $imageName;
-            
+
             Storage::disk('public')->put($imagePath, file_get_contents($image));
-            
-            // Update database
-            $karyawan->update(['image' => $imagePath]);
-            
+
+            // Update database — catat admin yang mengupload
+            $karyawan->update([
+                'image' => $imagePath,
+                'updated_by' => $request->user()->id,
+            ]);
+
             DB::commit();
 
-            return response()->json([
+            return (new KaryawanResource($karyawan->load(['admin', 'updatedBy'])))->additional([
                 'success' => true,
                 'message' => 'Foto berhasil diupload',
-                'data' => [
-                    'image_url' => asset('storage/' . $imagePath)
-                ]
             ]);
             
         } catch (\Exception $e) {
@@ -696,6 +747,408 @@ class KaryawanController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menampilkan preview kartu',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+    /**
+     * Import data karyawan dari file Excel
+     */
+    public function import(Request $request)
+    {
+        DB::beginTransaction();
+        
+        try {
+            $validator = Validator::make($request->all(), [
+                'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // max 10MB
+                'update_duplicate' => 'nullable|boolean', // Update jika data sudah ada
+                'delete_existing' => 'nullable|boolean', // Hapus data lama sebelum import
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validasi gagal',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Opsi: Hapus data lama jika diminta — forceDelete agar tidak konflik unique constraint
+            if ($request->boolean('delete_existing')) {
+                $karyawans = Karyawan::withTrashed()->get();
+                foreach ($karyawans as $karyawan) {
+                    $rawImage = $karyawan->getRawOriginal('image');
+                    if ($rawImage && Storage::disk('public')->exists($rawImage)) {
+                        Storage::disk('public')->delete($rawImage);
+                    }
+                }
+                Karyawan::withTrashed()->forceDelete();
+            }
+
+            // Proses import
+            $import = new KaryawanImport();
+            Excel::import($import, $request->file('file'));
+
+            $successCount = $import->getSuccessCount();
+            $totalRows = $import->getTotalRows();
+            
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil mengimport {$successCount} dari {$totalRows} data karyawan",
+                'data' => [
+                    'imported' => $successCount,
+                    'total_rows' => $totalRows,
+                    'imported_ids' => $import->getImportedIds()
+                ]
+            ]);
+        } catch (\Maatwebsite\Excel\Validators\ValidationException $e) {
+            DB::rollBack();
+            
+            $failures = $e->failures();
+            $errors = [];
+            
+            foreach ($failures as $failure) {
+                $errors[] = [
+                    'row' => $failure->row(),
+                    'attribute' => $failure->attribute(),
+                    'errors' => $failure->errors(),
+                    'values' => $failure->values(),
+                ];
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengimport data, terdapat kesalahan pada file Excel',
+                'errors' => $errors
+            ], 422);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error import karyawan: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengimport data',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Terjadi kesalahan saat import'
+            ], 500);
+        }
+    }
+
+    /**
+     * Download template Excel untuk import
+     */
+    public function downloadTemplate()
+    {
+        try {
+            $headers = [
+                'nomor_induk',
+                'nik',
+                'no_rek_bri',
+                'nama_lengkap',
+                'posisi',
+                'email',
+                'alamat',
+                'no_wa',
+                'tanggal_masuk',
+                'tanggal_keluar',
+                'status_aktif'
+            ];
+
+            $exampleData = [
+                [
+                    'nomor_induk' => 'KRY-001',
+                    'nik' => '3273010101900001',
+                    'no_rek_bri' => '012345678901',
+                    'nama_lengkap' => 'John Doe',
+                    'posisi' => 'operator',
+                    'email' => 'john.doe@example.com',
+                    'alamat' => 'Jl. Contoh No. 123, Jakarta',
+                    'no_wa' => '081234567890',
+                    'tanggal_masuk' => '2024-01-15',
+                    'tanggal_keluar' => '',
+                    'status_aktif' => 'aktif'
+                ],
+                [
+                    'nomor_induk' => 'KRY-002',
+                    'nik' => '3273010101900002',
+                    'no_rek_bri' => '012345678902',
+                    'nama_lengkap' => 'Jane Smith',
+                    'posisi' => 'supir',
+                    'email' => 'jane.smith@example.com',
+                    'alamat' => 'Jl. Contoh No. 456, Jakarta',
+                    'no_wa' => '081234567891',
+                    'tanggal_masuk' => '2024-02-01',
+                    'tanggal_keluar' => '',
+                    'status_aktif' => 'aktif'
+                ],
+                [
+                    'nomor_induk' => 'KRY-003',
+                    'nik' => '3273010101900003',
+                    'no_rek_bri' => '012345678903',
+                    'nama_lengkap' => 'Bob Johnson',
+                    'posisi' => 'keamanan',
+                    'email' => 'bob.johnson@example.com',
+                    'alamat' => 'Jl. Contoh No. 789, Jakarta',
+                    'no_wa' => '081234567892',
+                    'tanggal_masuk' => '2023-12-10',
+                    'tanggal_keluar' => '2024-03-31',
+                    'status_aktif' => 'tidak aktif'
+                ]
+            ];
+
+            return Excel::download(new class($headers, $exampleData) implements \Maatwebsite\Excel\Concerns\FromArray, \Maatwebsite\Excel\Concerns\WithHeadings, \Maatwebsite\Excel\Concerns\WithTitle, \Maatwebsite\Excel\Concerns\WithStyles {
+                protected $headers;
+                protected $data;
+
+                public function __construct($headers, $data)
+                {
+                    $this->headers = $headers;
+                    $this->data = $data;
+                }
+
+                public function array(): array
+                {
+                    return $this->data;
+                }
+
+                public function headings(): array
+                {
+                    return $this->headers;
+                }
+
+                public function title(): string
+                {
+                    return 'Template Import Karyawan';
+                }
+
+                public function styles(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet)
+                {
+                    // Style untuk header
+                    $sheet->getStyle('A1:K1')->applyFromArray([
+                        'font' => [
+                            'bold' => true,
+                            'color' => ['argb' => 'FFFFFFFF'],
+                        ],
+                        'fill' => [
+                            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                            'startColor' => ['argb' => 'FF4CAF50'],
+                        ],
+                        'borders' => [
+                            'allBorders' => [
+                                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                                'color' => ['argb' => 'FF000000'],
+                            ],
+                        ],
+                    ]);
+
+                    // Auto-size columns
+                    foreach (range('A', 'K') as $column) {
+                        $sheet->getColumnDimension($column)->setAutoSize(true);
+                    }
+
+                    // Validasi data untuk kolom posisi
+                    $validation = $sheet->getCell('E2')->getDataValidation();
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+                    $validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_INFORMATION);
+                    $validation->setAllowBlank(false);
+                    $validation->setShowInputMessage(true);
+                    $validation->setShowErrorMessage(true);
+                    $validation->setShowDropDown(true);
+                    $validation->setFormula1('"jasa,supir,keamanan,cleaning_service,operator"');
+                    $sheet->setDataValidation("E2:E1048576", $validation);
+
+                    // Validasi untuk status_aktif
+                    $validation = $sheet->getCell('K2')->getDataValidation();
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+                    $validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_INFORMATION);
+                    $validation->setAllowBlank(false);
+                    $validation->setShowInputMessage(true);
+                    $validation->setShowErrorMessage(true);
+                    $validation->setShowDropDown(true);
+                    $validation->setFormula1('"aktif,tidak aktif"');
+                    $sheet->setDataValidation("K2:K1048576", $validation);
+
+                    return $sheet;
+                }
+            }, 'Template_Import_Karyawan.xlsx');
+
+        } catch (\Exception $e) {
+            Log::error('Error download template: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengunduh template',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Import dengan preview data sebelum commit
+     */
+    public function importPreview(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validasi gagal',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Baca file tanpa menyimpan ke database
+            $rows = Excel::toArray(new KaryawanImport, $request->file('file'));
+            
+            $data = [];
+            $headers = [];
+            $previewData = [];
+
+            if (!empty($rows) && !empty($rows[0])) {
+                $headers = array_keys($rows[0][0]);
+                $previewData = array_slice($rows[0], 0, 10); // Ambil 10 baris pertama untuk preview
+                
+                // Validasi awal menggunakan aturan dasar
+                $basicRules = [
+                    'nik'           => 'required|string|max:20',
+                    'nama_lengkap'  => 'required|string|max:100',
+                    'posisi'        => 'required|in:jasa,supir,keamanan,cleaning_service,operator',
+                    'tanggal_masuk' => 'required|date',
+                    'status_aktif'  => 'required|in:aktif,tidak aktif',
+                ];
+
+                $errors = [];
+                foreach ($rows[0] as $index => $row) {
+                    $rowValidator = Validator::make($row, $basicRules);
+                    if ($rowValidator->fails()) {
+                        $errors[] = [
+                            'row' => $index + 2,
+                            'errors' => $rowValidator->errors()->toArray()
+                        ];
+                    }
+                }
+
+                $data = [
+                    'headers' => $headers,
+                    'preview' => $previewData,
+                    'total_rows' => count($rows[0]),
+                    'validation_errors' => $errors,
+                    'has_errors' => !empty($errors)
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Preview data berhasil',
+                'data' => $data
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error preview import: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal preview data',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Cek status import
+     */
+    public function importStatus()
+    {
+        try {
+            // Logika untuk mengecek status import terakhir
+            // Bisa disimpan di cache atau database
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Status import',
+                'data' => [
+                    'last_import' => cache('last_import_time'),
+                    'total_imported_today' => Karyawan::whereDate('created_at', today())->count(),
+                    'total_records' => Karyawan::count()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengambil status import',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+        
+    }
+    public function restoreByNik(Request $request)
+    {
+        DB::beginTransaction();
+
+        try {
+            $validator = Validator::make($request->all(), [
+                'nik' => 'required|string|regex:/^[0-9]+$/|max:16',
+            ], [
+                'nik.required' => 'NIK wajib diisi',
+                'nik.regex' => 'NIK hanya boleh angka',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validasi gagal',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $karyawan = Karyawan::withTrashed()
+                ->where('nik', $request->nik)
+                ->first();
+
+            if (!$karyawan) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data karyawan dengan NIK tersebut tidak ditemukan'
+                ], 404);
+            }
+
+            if (!$karyawan->trashed()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data karyawan masih aktif'
+                ], 400);
+            }
+
+            $karyawan->restore();
+
+            $karyawan->update([
+                'status_aktif' => true,
+                'tanggal_keluar' => null,
+                'updated_by' => $request->user()->id,
+            ]);
+
+            DB::commit();
+
+            return (new KaryawanResource($karyawan->load(['admin', 'updatedBy'])))->additional([
+                'success' => true,
+                'message' => 'Data karyawan berhasil dipulihkan berdasarkan NIK'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memulihkan data',
                 'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }

@@ -13,17 +13,12 @@ return new class extends Migration
     {
         Schema::create('penggajian', function (Blueprint $table) {
             $table->id();            
-            // Foreign key ke karyawan menggunakan nomor_induk
-            $table->string('no_induk', 12);
-            $table->foreign('no_induk')
-                ->references('nomor_induk')
+            $table->unsignedBigInteger('karyawan_id')->nullable();
+            $table->foreign('karyawan_id')
+                ->references('id')
                 ->on('karyawans')
-                ->onDelete('cascade')
+                ->onDelete('set null')
                 ->onUpdate('cascade');
-            $table->string('nik', 20);
-            $table->string('nama', 100);
-            $table->string('no_rek_bri', 20)->nullable();
-            $table->enum('posisi', ['jasa','supir','keamanan','cleaning_service','operator']);
             $table->decimal('jumlah_penghasilan_kotor', 15, 2)->default(0);
             $table->decimal('bpjs_kesehatan', 15, 2)->default(0);
             $table->decimal('bpjs_jht', 15, 2)->default(0);
@@ -37,18 +32,13 @@ return new class extends Migration
             $table->decimal('upah_diterima', 15, 2)->default(0);
             $table->date('gajian_bulan');
             $table->boolean('status_penggajian')->default(false);
-
-            // periode penggajian
-            $table->date('periode_awal');
-            $table->date('periode_akhir');
             $table->date('tanggal_cetak')->nullable();
-
+            $table->unsignedBigInteger('admin_id')->nullable();
+            $table->foreign('admin_id')->references('id')->on('users')->onDelete('set null');
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->foreign('updated_by')->references('id')->on('users')->onDelete('set null');
             $table->softDeletes();            
             $table->timestamps();
-            // Index untuk performa query
-            $table->index('no_induk');
-            $table->index('periode_awal');
-            $table->index('periode_akhir');
         });
     }
 
