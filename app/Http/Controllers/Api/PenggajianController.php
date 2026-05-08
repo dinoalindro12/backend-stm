@@ -253,7 +253,7 @@ class PenggajianController extends Controller
                         'success' => false,
                         'message' => 'Penggajian gagal diupdate',
                         'error'   => 'Karyawan sudah memiliki data penggajian untuk ' .
-                                     Carbon::parse($gajianBulan)->translatedFormat('F Y')
+                                    Carbon::parse($gajianBulan)->translatedFormat('F Y')
                     ], 409);
                 }
             }
@@ -553,6 +553,94 @@ class PenggajianController extends Controller
                 'success' => false,
                 'message' => 'Gagal membuat link WhatsApp',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Kirim slip gaji ke WhatsApp untuk semua karyawan dalam satu bulan
+     */
+    public function sendWhatsAppBulk(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'gajian_bulan' => 'required|date',
+            'posisi'       => 'nullable|in:jasa,supir,keamanan,cleaning_service,operator',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $gajianBulan = Carbon::parse($request->gajian_bulan)->startOfMonth();
+
+            $query = Penggajian::with('karyawan')
+                ->whereYear('gajian_bulan', $gajianBulan->year)
+                ->whereMonth('gajian_bulan', $gajianBulan->month);
+
+            if ($request->filled('posisi')) {
+                $query->whereHas('karyawan', fn($q) => $q->where('posisi', $request->posisi));
+            }
+
+            $penggajianList = $query->get();
+
+            if ($penggajianList->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada data penggajian untuk ' . $gajianBulan->translatedFormat('F Y'),
+                ], 404);
+            }
+
+            $berhasil      = [];
+            $gagal         = [];
+
+            foreach ($penggajianList as $penggajian) {
+                $karyawan = $penggajian->karyawan;
+
+                if (empty($karyawan?->no_wa)) {
+                    $gagal[] = [
+                        'penggajian_id' => $penggajian->id,
+                        'nama'          => optional($karyawan)->nama_lengkap ?? 'N/A',
+                        'alasan'        => 'Nomor WhatsApp tidak tersedia',
+                    ];
+                    continue;
+                }
+
+                $pesan  = $this->formatPesanSlip($penggajian);
+                $nomor  = $this->formatNomorWA($karyawan->no_wa);
+                $url    = 'https://wa.me/' . $nomor . '?text=' . urlencode($pesan);
+
+                $berhasil[] = [
+                    'penggajian_id' => $penggajian->id,
+                    'nama'          => $karyawan->nama_lengkap,
+                    'nomor_induk'   => $karyawan->nomor_induk,
+                    'no_wa'         => $karyawan->no_wa,
+                    'whatsapp_url'  => $url,
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => count($berhasil) . ' slip gaji siap dikirim, ' . count($gagal) . ' gagal.',
+                'data'    => [
+                    'periode'         => $gajianBulan->translatedFormat('F Y'),
+                    'total'           => $penggajianList->count(),
+                    'berhasil_count'  => count($berhasil),
+                    'gagal_count'     => count($gagal),
+                    'berhasil'        => $berhasil,
+                    'gagal'           => $gagal,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memproses pengiriman bulk WhatsApp',
+                'error'   => $e->getMessage()
             ], 500);
         }
     }

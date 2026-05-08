@@ -116,6 +116,7 @@ Route::middleware('auth:sanctum')->prefix('penggajian')->name('api.penggajian.')
     // CRUD
     Route::get('/', [PenggajianController::class, 'index']);
     Route::post('/', [PenggajianController::class, 'store']);
+    Route::post('/send-whatsapp-bulk', [PenggajianController::class, 'sendWhatsAppBulk']);
     Route::get('/{id}', [PenggajianController::class, 'show']);
     Route::put('/{id}', [PenggajianController::class, 'update']);
     Route::delete('/{id}', [PenggajianController::class, 'destroy']);
