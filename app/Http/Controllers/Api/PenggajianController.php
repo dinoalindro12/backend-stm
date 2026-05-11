@@ -29,15 +29,6 @@ class PenggajianController extends Controller
         if ($request->has('status')) {
             $query->status($request->status);
         }
-
-        // Filter berdasarkan periode
-        if ($request->has('periode_awal') && $request->has('periode_akhir')) {
-            $query->whereBetween('gajian_bulan', [
-                $request->periode_awal,
-                $request->periode_akhir
-            ]);
-        }
-
         // Filter berdasarkan bulan gajian
         if ($request->has('bulan')) {
             $query->whereMonth('gajian_bulan', $request->bulan);

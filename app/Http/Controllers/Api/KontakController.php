@@ -5,9 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\KontakResource;
 use App\Models\Kontak;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 
 class KontakController extends Controller
@@ -46,55 +47,83 @@ class KontakController extends Controller
     /**
      * Simpan pesan kontak baru dari publik.
      */
-    public function store(Request $request): JsonResponse
-    {
-        $validator = Validator::make($request->all(), [
-            'nama' => 'required|string|max:255',
-            'email' => 'required|email|max:255',
-            'no_wa' => 'nullable|string|regex:/^[0-9]+$/|max:15',
-            'perusahaan' => 'nullable|string|max:255',
-            'subjek' => 'required|string|max:255',
-            'isi' => 'required|string',          
+public function store(Request $request): JsonResponse
+{
+    // Dapatkan IP pengirim
+    $ipAddress = $request->ip();
+    $key = 'kontak-create:' . $ipAddress;
+    
+    // Cek limit: hanya 1 request per menit
+    if (RateLimiter::tooManyAttempts($key, 1)) {
+        $seconds = RateLimiter::availableIn($key);
+        return response()->json([
+            'success' => false,
+            'message' => 'Terlalu banyak permintaan. Silakan coba lagi setelah ' . $seconds . ' detik.',
+            'errors' => [
+                'rate_limit' => ['Terlalu banyak permitaan. Silahkan coba lagi beberapa menit setelah ini.']
+            ]
+        ], 429); // HTTP 429 Too Many Requests
+    }
+    
+    // Hitung attempt
+    RateLimiter::hit($key, 60); // Lock selama 60 detik
+    
+    $validator = Validator::make($request->all(), [
+        'nama' => 'required|string|max:255',
+        'email' => 'required|email|max:255',
+        'no_wa' => 'nullable|string|regex:/^[0-9]+$/|max:15',
+        'perusahaan' => 'nullable|string|max:255',
+        'subjek' => 'required|string|max:255',
+        'isi' => 'required|string',          
+    ]);
+
+    if ($validator->fails()) {
+        // Jangan lupa mengurangi attempt jika validasi gagal
+        RateLimiter::clear($key);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Validasi gagal',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
+    try {
+        $kontak = Kontak::create([
+            'nama' => $request->nama,
+            'email' => $request->email,
+            'no_wa'=>  $request->no_wa,
+            'perusahaan' => $request->perusahaan,
+            'subjek' => $request->subjek,
+            'isi' => $request->isi,
+            'status_dibaca' => 'pending',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validasi gagal',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+        return (new KontakResource($kontak))
+            ->additional(['message' => 'Pesan berhasil dikirim'])
+            ->response()
+            ->setStatusCode(201);
 
-        try {
-            $kontak = Kontak::create([
-                'nama' => $request->nama,
-                'email' => $request->email,
-                'no_wa'=>  $request->no_wa,
-                'perusahaan' => $request->perusahaan,
-                'subjek' => $request->subjek,
-                'isi' => $request->isi,
-                'status_dibaca' => 'pending',
-            ]);
-
-            return (new KontakResource($kontak))
-                ->additional(['message' => 'Pesan berhasil dikirim'])
-                ->response()
-                ->setStatusCode(201);
-
-        } catch (\Illuminate\Database\QueryException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal menyimpan data ke database',
-                'error' => $e->getMessage()
-            ], 500);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Terjadi kesalahan saat memproses pesan',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+    } catch (\Illuminate\Database\QueryException $e) {
+        // Hapus attempt jika gagal menyimpan
+        RateLimiter::clear($key);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal menyimpan data ke database',
+            'error' => $e->getMessage()
+        ], 500);
+    } catch (\Exception $e) {
+        // Hapus attempt jika ada error
+        RateLimiter::clear($key);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Terjadi kesalahan saat memproses pesan',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Tampilkan detail pesan — otomatis tandai dibaca oleh admin yang login.
