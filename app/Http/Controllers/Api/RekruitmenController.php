@@ -2,15 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\Rekruitmen;
-use Illuminate\Support\Str;
-use Illuminate\Http\Request;
-use App\Models\LowonganKerja;
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Validator;
 use App\Http\Resources\RekruitmenResource;
 use App\Http\Resources\StatusTerimaResource;
+use App\Models\LowonganKerja;
+use App\Models\Rekruitmen;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
+
 
 class RekruitmenController extends Controller
 {
@@ -53,49 +56,93 @@ public function index(Request $request)
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'lowongan_kerja_id' => 'required|exists:lowongan_kerja,id',
-            'nik' => [
-                'required',
-                'string',
-                'max:16',
-                function ($attribute, $value, $fail) use ($request) {
-                    $exists = Rekruitmen::where('nik', $value)
-                        ->where('lowongan_kerja_id', $request->lowongan_kerja_id)
-                        ->exists();
-                    if ($exists) {
-                        $fail('Anda sudah perna melamar di lowongan yang sama sebelumnya.');
-                    }
-                },
-            ],
-            'nama' => 'required|string|max:255',
-            'nama_lengkap' => 'required|string|max:255',
-            'posisi_dilamar' => 'required|string|max:255',
-            'no_wa' => 'required|string|max:20',
-            'alamat' => 'nullable|string',
-            'foto_ktp' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'foto_kk' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'foto_skck' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'pas_foto' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-            'surat_sehat' => 'required|file|mimes:pdf,jpeg,png,jpg|max:2048',
-            'surat_anti_narkoba' => 'required|file|mimes:pdf,jpeg,png,jpg|max:2048',
-            'surat_lamaran' => 'required|file|mimes:pdf|max:2048',
-            'cv' => 'required|file|mimes:pdf|max:2048',
-        ]);
+public function store(Request $request): JsonResponse
+{
+    // Ambil IP user
+    $ipAddress = $request->ip();
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation error',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+    // Key limiter
+    $key = 'rekruitmen-create:' . $ipAddress;
 
-        // Cek apakah lowongan masih aktif — gunakan findOrFail untuk hindari null pointer
+    // Maksimal 1 request per menit
+    if (RateLimiter::tooManyAttempts($key, 1)) {
+        $seconds = RateLimiter::availableIn($key);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Terlalu banyak permintaan. Silakan coba lagi setelah ' . $seconds . ' detik.',
+            'errors' => [
+                'rate_limit' => [
+                    'Terlalu banyak permintaan. Silakan coba lagi beberapa saat lagi.'
+                ]
+            ]
+        ], 429);
+    }
+
+    // Hit limiter selama 60 detik
+    RateLimiter::hit($key, 60);
+
+    $validator = Validator::make($request->all(), [
+        'lowongan_kerja_id' => 'required|exists:lowongan_kerja,id',
+
+        'nik' => [
+            'required',
+            'string',
+            'max:16',
+            function ($attribute, $value, $fail) use ($request) {
+                $exists = Rekruitmen::where('nik', $value)
+                    ->where('lowongan_kerja_id', $request->lowongan_kerja_id)
+                    ->exists();
+
+                if ($exists) {
+                    $fail('Anda sudah pernah melamar di lowongan yang sama sebelumnya.');
+                }
+            },
+        ],
+
+        'nama' => 'required|string|max:255',
+        'nama_lengkap' => 'required|string|max:255',
+        'posisi_dilamar' => 'required|string|max:255',
+        'no_wa' => 'required|string|max:20',
+        'alamat' => 'nullable|string',
+
+        'foto_ktp' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+        'foto_kk' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+        'foto_skck' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+        'pas_foto' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+
+        'surat_sehat' => 'required|file|mimes:pdf,jpeg,png,jpg|max:2048',
+        'surat_anti_narkoba' => 'required|file|mimes:pdf,jpeg,png,jpg|max:2048',
+
+        'surat_lamaran' => 'required|file|mimes:pdf|max:2048',
+        'cv' => 'required|file|mimes:pdf|max:2048',
+    ]);
+
+    // Jika validasi gagal
+    if ($validator->fails()) {
+
+        // Hapus limiter supaya user bisa coba lagi
+        RateLimiter::clear($key);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation error',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
+    try {
+
+        // Cek lowongan aktif
         $lowongan = LowonganKerja::findOrFail($request->lowongan_kerja_id);
-        if ($lowongan->status_lowongan !== 'aktif' || $lowongan->deadline_lowongan < now()) {
+
+        if (
+            $lowongan->status_lowongan !== 'aktif' ||
+            $lowongan->deadline_lowongan < now()
+        ) {
+
+            RateLimiter::clear($key);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Lowongan kerja sudah tidak aktif atau melewati deadline'
@@ -103,17 +150,37 @@ public function index(Request $request)
         }
 
         // Upload files
-        $data = $request->except(['foto_ktp', 'foto_kk', 'foto_skck', 'pas_foto', 'surat_sehat', 'surat_anti_narkoba', 'surat_lamaran', 'cv']);
-        
-        $files = ['foto_ktp', 'foto_kk', 'foto_skck', 'pas_foto', 'surat_sehat', 'surat_anti_narkoba', 'surat_lamaran', 'cv'];
-        
+        $data = $request->except([
+            'foto_ktp',
+            'foto_kk',
+            'foto_skck',
+            'pas_foto',
+            'surat_sehat',
+            'surat_anti_narkoba',
+            'surat_lamaran',
+            'cv'
+        ]);
+
+        $files = [
+            'foto_ktp',
+            'foto_kk',
+            'foto_skck',
+            'pas_foto',
+            'surat_sehat',
+            'surat_anti_narkoba',
+            'surat_lamaran',
+            'cv'
+        ];
+
         foreach ($files as $file) {
             if ($request->hasFile($file)) {
-                $data[$file] = $request->file($file)->store('rekruitmen', 'public');
+                $data[$file] = $request
+                    ->file($file)
+                    ->store('rekruitmen', 'public');
             }
         }
 
-        // Generate token pendaftaran — uuid dijamin unik
+        // Generate token
         $data['token_pendaftaran'] = (string) Str::uuid();
 
         $rekruitmen = Rekruitmen::create($data);
@@ -123,7 +190,19 @@ public function index(Request $request)
             'message' => 'Pendaftaran berhasil',
             'data' => new RekruitmenResource($rekruitmen)
         ], 201);
+
+    } catch (\Exception $e) {
+
+        // Hapus limiter jika gagal
+        RateLimiter::clear($key);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Terjadi kesalahan saat pendaftaran',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Display the specified resource.

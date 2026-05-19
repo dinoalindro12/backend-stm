@@ -129,25 +129,33 @@ class DashboardController extends Controller
         $months    = (int) $request->get('months', 6);
         $startDate = now()->subMonths($months - 1)->startOfMonth();
 
-        // Gunakan strftime untuk SQLite
-        $gajiData = Penggajian::selectRaw('
-                strftime("%Y-%m", gajian_bulan) as bulan,
+        $driver = \DB::getDriverName();
+        if ($driver === 'mysql') {
+            $bulanExprGaji = "DATE_FORMAT(gajian_bulan, '%Y-%m')";
+            $bulanExprTagihan = "DATE_FORMAT(tagihan_bulan, '%Y-%m')";
+        } else {
+            $bulanExprGaji = "strftime('%Y-%m', gajian_bulan)";
+            $bulanExprTagihan = "strftime('%Y-%m', tagihan_bulan)";
+        }
+
+        $gajiData = Penggajian::selectRaw("
+                $bulanExprGaji as bulan,
                 SUM(upah_diterima) as total_gaji,
                 COUNT(*) as jumlah_karyawan,
                 AVG(upah_diterima) as rata_rata_gaji
-            ')
+            ")
             ->where('gajian_bulan', '>=', $startDate)
-            ->groupByRaw('strftime("%Y-%m", gajian_bulan)')
-            ->orderByRaw('strftime("%Y-%m", gajian_bulan)')
+            ->groupByRaw($bulanExprGaji)
+            ->orderByRaw($bulanExprGaji)
             ->get();
 
-        $tagihanData = TagihanPerusahaan::selectRaw('
-                strftime("%Y-%m", tagihan_bulan) as bulan,
+        $tagihanData = TagihanPerusahaan::selectRaw("
+                $bulanExprTagihan as bulan,
                 SUM(upah_total) as total_tagihan
-            ')
+            ")
             ->where('tagihan_bulan', '>=', $startDate)
-            ->groupByRaw('strftime("%Y-%m", tagihan_bulan)')
-            ->orderByRaw('strftime("%Y-%m", tagihan_bulan)')
+            ->groupByRaw($bulanExprTagihan)
+            ->orderByRaw($bulanExprTagihan)
             ->get();
 
         $chartData = [];
@@ -191,16 +199,23 @@ class DashboardController extends Controller
         $months    = (int) $request->get('months', 6);
         $startDate = now()->subMonths($months - 1)->startOfMonth();
 
-        $pelamarData = Rekruitmen::selectRaw('
-                strftime("%Y-%m", created_at) as bulan,
+        $driver = \DB::getDriverName();
+        if ($driver === 'mysql') {
+            $bulanExpr = "DATE_FORMAT(created_at, '%Y-%m')";
+        } else {
+            $bulanExpr = "strftime('%Y-%m', created_at)";
+        }
+
+        $pelamarData = Rekruitmen::selectRaw("
+                $bulanExpr as bulan,
                 COUNT(*) as total_pelamar,
-                SUM(CASE WHEN status_terima = "pending" THEN 1 ELSE 0 END) as pending,
-                SUM(CASE WHEN status_terima = "diterima" THEN 1 ELSE 0 END) as diterima,
-                SUM(CASE WHEN status_terima = "ditolak" THEN 1 ELSE 0 END) as ditolak
-            ')
+                SUM(CASE WHEN status_terima = 'pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status_terima = 'diterima' THEN 1 ELSE 0 END) as diterima,
+                SUM(CASE WHEN status_terima = 'ditolak' THEN 1 ELSE 0 END) as ditolak
+            ")
             ->where('created_at', '>=', $startDate)
-            ->groupByRaw('strftime("%Y-%m", created_at)')
-            ->orderByRaw('strftime("%Y-%m", created_at)')
+            ->groupByRaw($bulanExpr)
+            ->orderByRaw($bulanExpr)
             ->get();
 
         return [
