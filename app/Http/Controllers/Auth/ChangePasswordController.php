@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules\Password;
 
 class ChangePasswordController extends Controller
 {
@@ -14,31 +15,32 @@ class ChangePasswordController extends Controller
      */
     public function __invoke(Request $request)
     {
-        // Validasi input
         $validator = Validator::make($request->all(), [
-            'current_password' => 'required',
-            'new_password' => 'required|min:8|confirmed',
-            'new_password_confirmation' => 'required'
+            'current_password' => ['required'],
+            'new_password'     => [
+                'required',
+                'confirmed',
+                Password::min(8)->letters()->numbers()->symbols(),
+            ],
+            'new_password_confirmation' => ['required'],
         ], [
-            'current_password.required' => 'Password saat ini wajib diisi',
-            'new_password.required' => 'Password baru wajib diisi',
-            'new_password.min' => 'Password baru minimal 8 karakter',
-            'new_password.confirmed' => 'Konfirmasi password baru tidak cocok',
-            'new_password_confirmation.required' => 'Konfirmasi password baru wajib diisi'
+            'current_password.required'          => 'Password saat ini wajib diisi.',
+            'new_password.required'              => 'Password baru wajib diisi.',
+            'new_password.confirmed'             => 'Konfirmasi password baru tidak cocok.',
+            'new_password_confirmation.required' => 'Konfirmasi password baru wajib diisi.',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal melakukan validasi',
-                'errors' => $validator->errors()
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
             ], 422);
         }
 
         try {
-            // Ambil user yang sedang login
             $user = auth()->user();
-            
+
             if (!$user) {
                 return response()->json([
                     'success' => false,
@@ -54,7 +56,7 @@ class ChangePasswordController extends Controller
                 ], 400);
             }
 
-            // Cek apakah password baru sama dengan password lama
+            // Pastikan password baru berbeda dari password lama
             if (Hash::check($request->new_password, $user->password)) {
                 return response()->json([
                     'success' => false,
@@ -62,7 +64,6 @@ class ChangePasswordController extends Controller
                 ], 400);
             }
 
-            // Update password
             $user->password = Hash::make($request->new_password);
             $user->save();
 
@@ -74,7 +75,8 @@ class ChangePasswordController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mengubah password: ' . $e->getMessage()
+                'message' => 'Gagal mengubah password',
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
