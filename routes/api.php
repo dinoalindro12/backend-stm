@@ -21,6 +21,8 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+
+
 // 📆 Route public lowongan kerja
 Route::get('/lowongan-kerja', [LowonganKerjaController::class, 'getLowonganAktif']);
 Route::get('/lowongan-kerja/statistik', [LowonganKerjaController::class, 'statistik']);

@@ -11,6 +11,7 @@ use App\Models\Penggajian;
 use App\Models\Rekruitmen;
 use App\Models\TagihanPerusahaan;
 use Carbon\Carbon;
+use DB;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -129,7 +130,7 @@ class DashboardController extends Controller
         $months    = (int) $request->get('months', 6);
         $startDate = now()->subMonths($months - 1)->startOfMonth();
 
-        $driver = \DB::getDriverName();
+        $driver = DB::getDriverName();
         if ($driver === 'mysql') {
             $bulanExprGaji = "DATE_FORMAT(gajian_bulan, '%Y-%m')";
             $bulanExprTagihan = "DATE_FORMAT(tagihan_bulan, '%Y-%m')";

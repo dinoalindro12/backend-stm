@@ -25,10 +25,10 @@ class LowonganKerjaResource extends JsonResource
             'status_lowongan' => $this->status_lowongan,
             'jumlah_pelamar' => $this->rekruitmen()->count(),
             'created_at' => $this->created_at->format('Y-m-d H:i:s'),
-            'admin' => [
-                'name' => $this->admin->name,
-                'email' => $this->admin->email,
-            ],
+            // 'admin' => [
+            //     'name' => $this->admin->name,
+            //     'email' => $this->admin->email,
+            // ],
             'updated_at' => $this->updated_at->format('Y-m-d H:i:s'),
         ];
     }
