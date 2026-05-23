@@ -127,6 +127,14 @@ class PenggajianController extends Controller
                 ], 409);
             }
 
+            $kalkulasi = $this->hitungPenggajian(
+                jumlahPenghasilanKotor: $request->jumlah_penghasilan_kotor,
+                jumlahHariKerja:        $request->jumlah_hari_kerja,
+                gajiHarian:             $request->gaji_harian,
+                jumlahLembur:           $request->jumlah_lembur ?? 0,
+                uangThr:                $request->uang_thr ?? 0,
+            );
+
             $penggajian = Penggajian::create([
                 'karyawan_id'              => $request->karyawan_id,
                 'admin_id'                 => $request->user()->id,
@@ -137,6 +145,7 @@ class PenggajianController extends Controller
                 'gaji_harian'              => $request->gaji_harian,
                 'jumlah_lembur'            => $request->jumlah_lembur,
                 'gajian_bulan'             => $bulanGajian,
+                ...$kalkulasi,
             ]);
 
             DB::commit();
@@ -256,7 +265,16 @@ class PenggajianController extends Controller
             ]);
             $updateData['updated_by'] = $request->user()->id;
 
-            $penggajian->update($updateData);
+            // Hitung ulang kalkulasi dengan nilai terbaru (merge request dengan data existing)
+            $kalkulasi = $this->hitungPenggajian(
+                jumlahPenghasilanKotor: $updateData['jumlah_penghasilan_kotor'] ?? $penggajian->jumlah_penghasilan_kotor,
+                jumlahHariKerja:        $updateData['jumlah_hari_kerja']        ?? $penggajian->jumlah_hari_kerja,
+                gajiHarian:             $updateData['gaji_harian']              ?? $penggajian->gaji_harian,
+                jumlahLembur:           $updateData['jumlah_lembur']            ?? $penggajian->jumlah_lembur,
+                uangThr:                $updateData['uang_thr']                 ?? $penggajian->uang_thr,
+            );
+
+            $penggajian->update(array_merge($updateData, $kalkulasi));
 
             DB::commit();
 
@@ -413,6 +431,13 @@ class PenggajianController extends Controller
                     'gaji_harian'              => $data['gaji_harian'],
                     'jumlah_lembur'            => $data['jumlah_lembur'] ?? 0,
                     'gajian_bulan'             => $gajianBulan,
+                    ...$this->hitungPenggajian(
+                        jumlahPenghasilanKotor: $data['jumlah_penghasilan_kotor'],
+                        jumlahHariKerja:        $data['jumlah_hari_kerja'],
+                        gajiHarian:             $data['gaji_harian'],
+                        jumlahLembur:           $data['jumlah_lembur'] ?? 0,
+                        uangThr:                $data['uang_thr'] ?? 0,
+                    ),
                 ]);
                 $results[] = $penggajian;
             }
@@ -701,6 +726,49 @@ class PenggajianController extends Controller
     }
 
     /**
+     * Hitung komponen penggajian.
+     *
+     * Aturan:
+     * - BPJS Kesehatan = 1% penghasilan kotor  (0 jika hari kerja < 7)
+     * - BPJS JHT       = 2% penghasilan kotor  (0 jika hari kerja < 7)
+     * - BPJS JP        = 1% penghasilan kotor  (0 jika hari kerja < 7)
+     * - Upah Kotor     = (gaji_harian × hari_kerja) + lembur + thr
+     * - Upah Diterima  = upah_kotor - total_bpjs
+     *
+     * @return array kolom-kolom hasil kalkulasi siap di-merge ke data create/update
+     */
+    private function hitungPenggajian(
+        float $jumlahPenghasilanKotor,
+        float $jumlahHariKerja,
+        float $gajiHarian,
+        float $jumlahLembur,
+        float $uangThr,
+    ): array {
+        if ($jumlahHariKerja < 7) {
+            $bpjsKesehatan = 0;
+            $bpjsJht       = 0;
+            $bpjsJp        = 0;
+        } else {
+            $bpjsKesehatan = $jumlahPenghasilanKotor * 0.01;
+            $bpjsJht       = $jumlahPenghasilanKotor * 0.02;
+            $bpjsJp        = $jumlahPenghasilanKotor * 0.01;
+        }
+
+        $totalBpjs        = $bpjsKesehatan + $bpjsJht + $bpjsJp;
+        $upahKotorKaryawan = ($gajiHarian * $jumlahHariKerja) + $jumlahLembur + $uangThr;
+        $upahDiterima      = $upahKotorKaryawan - $totalBpjs;
+
+        return [
+            'bpjs_kesehatan'      => $bpjsKesehatan,
+            'bpjs_jht'            => $bpjsJht,
+            'bpjs_jp'             => $bpjsJp,
+            'total_bpjs'          => $totalBpjs,
+            'upah_kotor_karyawan' => $upahKotorKaryawan,
+            'upah_diterima'       => $upahDiterima,
+        ];
+    }
+
+    /**
      * Copy penggajian dari bulan sebelumnya
      */
     public function copyFromPreviousMonth(Request $request)
@@ -779,6 +847,13 @@ class PenggajianController extends Controller
                     'gajian_bulan'             => $bulanBaru,
                     'status_penggajian'        => false,
                     'tanggal_cetak'            => null,
+                    ...$this->hitungPenggajian(
+                        jumlahPenghasilanKotor: $referensi->jumlah_penghasilan_kotor,
+                        jumlahHariKerja:        $referensi->jumlah_hari_kerja,
+                        gajiHarian:             $referensi->gaji_harian,
+                        jumlahLembur:           0,
+                        uangThr:                $adjustThr ? 0 : $referensi->uang_thr,
+                    ),
                 ];
 
                 $penggajianBaru = Penggajian::create($dataBaru);

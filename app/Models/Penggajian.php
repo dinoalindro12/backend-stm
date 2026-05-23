@@ -75,7 +75,7 @@ class Penggajian extends Model
         return $this->belongsTo(User::class, 'updated_by');
     }
 
-    // ========== BOOT METHOD ==========
+    // ========== boot ==========
 
     protected static function boot()
     {
@@ -86,39 +86,9 @@ class Penggajian extends Model
                 $penggajian->gajian_bulan = Carbon::now()->startOfMonth();
             }
         });
-
-        static::saving(function ($penggajian) {
-            // Hitung BPJS otomatis (1% Kesehatan, 2% JHT, 1% JP)
-            $penggajian->bpjs_kesehatan = $penggajian->jumlah_penghasilan_kotor * 0.01;
-            $penggajian->bpjs_jht = $penggajian->jumlah_penghasilan_kotor * 0.02;
-            $penggajian->bpjs_jp = $penggajian->jumlah_penghasilan_kotor * 0.01;
-            
-            // Aturan khusus: Jika hari kerja < 7, BPJS 0
-            if ($penggajian->jumlah_hari_kerja < 7) {
-                $penggajian->bpjs_kesehatan = 0;
-                $penggajian->bpjs_jht = 0;
-                $penggajian->bpjs_jp = 0;
-            }
-            
-            $penggajian->total_bpjs = 
-                $penggajian->bpjs_kesehatan + 
-                $penggajian->bpjs_jht + 
-                $penggajian->bpjs_jp;
-
-            // Hitung Upah Kotor Karyawan
-            $penggajian->upah_kotor_karyawan = 
-                ($penggajian->gaji_harian * $penggajian->jumlah_hari_kerja) + 
-                $penggajian->jumlah_lembur + 
-                ($penggajian->uang_thr ?? 0);
-
-            // Hitung Upah Netto (Diterima)
-            $penggajian->upah_diterima = 
-                $penggajian->upah_kotor_karyawan - 
-                $penggajian->total_bpjs;
-        });
     }
 
-    // ========== ACCESSORS ==========
+    // ========== getter nama bulan ==========
 
     public function getNamaBulanAttribute()
     {

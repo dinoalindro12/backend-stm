@@ -82,7 +82,7 @@ class TagihanPerusahaan extends Model
     }
 
     /**
-     * Boot method untuk auto-calculate
+     * Boot method untuk default tanggal
      */
     protected static function boot()
     {
@@ -91,48 +91,6 @@ class TagihanPerusahaan extends Model
         static::creating(function ($tagihan) {
             if (empty($tagihan->tagihan_bulan)) {
                 $tagihan->tagihan_bulan = Carbon::now()->startOfMonth();
-            }
-        });
-
-        static::saving(function ($tagihan) {
-            // 1. Hitung Komponen BPJS (Persentase Perusahaan)
-            // Sesuaikan persentase ini dengan kebijakan terbaru perusahaan Anda
-            $tagihan->bpjs_kesehatan = $tagihan->jumlah_penghasilan_kotor * 0.04; 
-            $tagihan->jht = $tagihan->jumlah_penghasilan_kotor * 0.037;
-            $tagihan->jp = $tagihan->jumlah_penghasilan_kotor * 0.02;
-            $tagihan->jkk = $tagihan->jumlah_penghasilan_kotor * 0.0024;
-            $tagihan->jkm = $tagihan->jumlah_penghasilan_kotor * 0.003;
-
-            // 2. Hitung Dasar Upah Pekerja (Gaji + Lembur + THR)
-            $upah_dasar = ($tagihan->gaji_harian * $tagihan->jumlah_hari_kerja) + 
-                        ($tagihan->jlh_lembur ?? 0) + 
-                        ($tagihan->thr ?? 0);
-
-            // 3. Kondisi Khusus Hari Kerja
-            if ($tagihan->jumlah_hari_kerja < 7) {
-                $tagihan->bpjs_kesehatan = 0;
-                $tagihan->jht = 0;
-                $tagihan->jp = 0;
-                $tagihan->jkk = 0;
-                $tagihan->jkm = 0;
-                $tagihan->seragam_cs_dan_keamanan = 0;
-                $tagihan->fee_manajemen = 0;
-                $tagihan->upah_diterima_pekerja = $upah_dasar;
-                $tagihan->upah_total = $upah_dasar;
-            } else {
-                // Total Biaya Tambahan Perusahaan
-                $total_iuran_perusahaan = 
-                    $tagihan->bpjs_kesehatan + $tagihan->jkk + $tagihan->jkm + 
-                    $tagihan->jht + $tagihan->jp + 
-                    ($tagihan->seragam_cs_dan_keamanan ?? 0) + 
-                    ($tagihan->fee_manajemen ?? 0);
-                
-                // Upah yang dikirim ke rekening pekerja (setelah dikurangi biaya tertentu jika ada)
-                // Di sini contohnya dikurangi 1 kali gaji harian sebagai admin fee/simpanan (sesuaikan logic Anda)
-                $tagihan->upah_diterima_pekerja = $upah_dasar - $tagihan->gaji_harian - $tagihan->total_iuran_perusahaan; // Contoh pengurangan gaji harian sebagai biaya tambahan, sesuaikan dengan kebutuhan Anda
-
-                // Total Tagihan ke Perusahaan (Upah Dasar + Iuran/Fee)
-                $tagihan->upah_total = $tagihan->upah_diterima_pekerja + $total_iuran_perusahaan + $tagihan->gaji_harian; // Tambahkan gaji harian sebagai biaya tambahan jika diperlukan
             }
         });
     }

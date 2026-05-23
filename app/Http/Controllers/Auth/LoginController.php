@@ -12,10 +12,17 @@ class LoginController extends Controller
      */
     public function __invoke(Request $request)
     {
+        
         $credentials = $request->validate([
             'email' => 'required|email', 
-            'password' => 'required'
-        ]);
+            'password' => 'required',
+        ],
+        [
+            'email.required' => 'Email wajib diisi',
+            'email.email' => 'Format email tidak valid',
+            'password.required' => 'Password wajib diisi',
+        ]
+        );
         
         if (!auth()->attempt($credentials)) {
             return response()->json(['message' => 'Data yang anda masukan tidak benar, coba perbaiki lagi'], 401);

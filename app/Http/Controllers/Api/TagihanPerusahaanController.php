@@ -156,11 +156,19 @@ class TagihanPerusahaanController extends Controller
             // Inject admin_id dan updated_by
             $data['admin_id'] = $request->user()->id;
             $data['updated_by'] = $request->user()->id;
-            
-            $tagihan = TagihanPerusahaan::create($data);
-            
-            // Refresh untuk mendapatkan nilai hasil perhitungan dari boot()
-            $tagihan->refresh();
+
+            // Hitung komponen tagihan di controller
+            $kalkulasi = $this->hitungTagihan(
+                jumlahPenghasilanKotor: $request->jumlah_penghasilan_kotor,
+                jumlahHariKerja:        $request->jumlah_hari_kerja,
+                gajiHarian:             $request->gaji_harian,
+                jlhLembur:              $request->jlh_lembur ?? 0,
+                thr:                    $request->thr ?? 0,
+                seragam:                $request->seragam_cs_dan_keamanan ?? 0,
+                feeManajemen:           $request->fee_manajemen ?? 0,
+            );
+
+            $tagihan = TagihanPerusahaan::create(array_merge($data, $kalkulasi));
 
             DB::commit();
 
@@ -287,11 +295,19 @@ class TagihanPerusahaanController extends Controller
 
             // Inject updated_by
             $data['updated_by'] = $request->user()->id;
-            
-            $tagihan->update($data);
-            
-            // Refresh untuk mendapatkan nilai hasil perhitungan dari boot()
-            $tagihan->refresh();
+
+            // Hitung ulang kalkulasi dengan nilai terbaru (merge request dengan data existing)
+            $kalkulasi = $this->hitungTagihan(
+                jumlahPenghasilanKotor: $data['jumlah_penghasilan_kotor'] ?? $tagihan->jumlah_penghasilan_kotor,
+                jumlahHariKerja:        $data['jumlah_hari_kerja']        ?? $tagihan->jumlah_hari_kerja,
+                gajiHarian:             $data['gaji_harian']              ?? $tagihan->gaji_harian,
+                jlhLembur:              $data['jlh_lembur']               ?? $tagihan->jlh_lembur ?? 0,
+                thr:                    $data['thr']                      ?? $tagihan->thr ?? 0,
+                seragam:                $data['seragam_cs_dan_keamanan']  ?? $tagihan->seragam_cs_dan_keamanan ?? 0,
+                feeManajemen:           $data['fee_manajemen']            ?? $tagihan->fee_manajemen ?? 0,
+            );
+
+            $tagihan->update(array_merge($data, $kalkulasi));
 
             DB::commit();
 
@@ -538,7 +554,7 @@ class TagihanPerusahaanController extends Controller
                             $this->getBulanIndonesia($tagihanBulan->format('n')) . ' ' . $tagihanBulan->format('Y'));
                     }
                     
-                    // ✅ Hapus field yang dihitung otomatis
+                    // ✅ Hapus field yang dihitung otomatis, lalu hitung di controller
                     $item = array_diff_key($item, array_flip([
                         'bpjs_kesehatan', 'jkk', 'jkm', 'jht', 'jp',
                         'upah_diterima_pekerja', 'upah_total',
@@ -547,8 +563,18 @@ class TagihanPerusahaanController extends Controller
                     // Inject admin_id dan updated_by
                     $item['admin_id'] = $request->user()->id;
                     $item['updated_by'] = $request->user()->id;
-                    
-                    $tagihan = TagihanPerusahaan::create($item);
+
+                    $kalkulasi = $this->hitungTagihan(
+                        jumlahPenghasilanKotor: $item['jumlah_penghasilan_kotor'],
+                        jumlahHariKerja:        $item['jumlah_hari_kerja'],
+                        gajiHarian:             $item['gaji_harian'],
+                        jlhLembur:              $item['jlh_lembur'] ?? 0,
+                        thr:                    $item['thr'] ?? 0,
+                        seragam:                $item['seragam_cs_dan_keamanan'] ?? 0,
+                        feeManajemen:           $item['fee_manajemen'] ?? 0,
+                    );
+
+                    $tagihan = TagihanPerusahaan::create(array_merge($item, $kalkulasi));
                     $imported[] = $tagihan;
                 } catch (\Exception $e) {
                     $errors[] = [
@@ -789,8 +815,15 @@ class TagihanPerusahaanController extends Controller
                 }
 
                 // Biarkan model menghitung field otomatis
-                $tagihanBaru = TagihanPerusahaan::create($dataBaru);
-                $tagihanBaru->refresh(); // Ambil hasil perhitungan
+                $tagihanBaru = TagihanPerusahaan::create(array_merge($dataBaru, $this->hitungTagihan(
+                    jumlahPenghasilanKotor: $dataBaru['jumlah_penghasilan_kotor'],
+                    jumlahHariKerja:        $dataBaru['jumlah_hari_kerja'],
+                    gajiHarian:             $dataBaru['gaji_harian'],
+                    jlhLembur:              $dataBaru['jlh_lembur'],
+                    thr:                    $dataBaru['thr'],
+                    seragam:                $dataBaru['seragam_cs_dan_keamanan'],
+                    feeManajemen:           $dataBaru['fee_manajemen'],
+                )));
                 $created[] = $tagihanBaru;
             }
 
@@ -967,6 +1000,68 @@ class TagihanPerusahaanController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Hitung komponen tagihan perusahaan.
+     *
+     * Aturan:
+     * - BPJS Kesehatan (perusahaan) = 4%   penghasilan kotor  (0 jika hari kerja < 7)
+     * - JHT (perusahaan)            = 3.7% penghasilan kotor  (0 jika hari kerja < 7)
+     * - JP  (perusahaan)            = 2%   penghasilan kotor  (0 jika hari kerja < 7)
+     * - JKK                         = 0.24% penghasilan kotor (0 jika hari kerja < 7)
+     * - JKM                         = 0.3%  penghasilan kotor (0 jika hari kerja < 7)
+     * - Seragam & Fee               = 0 jika hari kerja < 7
+     * - Upah Diterima Pekerja       = (gaji_harian × hari_kerja) + lembur + thr
+     * - Total Tagihan               = upah_diterima_pekerja + semua iuran & fee
+     *
+     * @return array kolom-kolom hasil kalkulasi siap di-merge ke data create/update
+     */
+    private function hitungTagihan(
+        float $jumlahPenghasilanKotor,
+        float $jumlahHariKerja,
+        float $gajiHarian,
+        float $jlhLembur,
+        float $thr,
+        float $seragam,
+        float $feeManajemen,
+    ): array {
+        $upahDasarPekerja = ($gajiHarian * $jumlahHariKerja) + $jlhLembur + $thr;
+
+        if ($jumlahHariKerja < 7) {
+            return [
+                'bpjs_kesehatan'       => 0,
+                'jkk'                  => 0,
+                'jkm'                  => 0,
+                'jht'                  => 0,
+                'jp'                   => 0,
+                'seragam_cs_dan_keamanan' => 0,
+                'fee_manajemen'        => 0,
+                'upah_diterima_pekerja' => $upahDasarPekerja,
+                'upah_total'           => $upahDasarPekerja,
+            ];
+        }
+
+        $bpjsKesehatan = $jumlahPenghasilanKotor * 0.04;
+        $jht           = $jumlahPenghasilanKotor * 0.037;
+        $jp            = $jumlahPenghasilanKotor * 0.02;
+        $jkk           = $jumlahPenghasilanKotor * 0.0024;
+        $jkm           = $jumlahPenghasilanKotor * 0.003;
+
+        $totalIuranPerusahaan = $bpjsKesehatan + $jkk + $jkm + $jht + $jp + $seragam + $feeManajemen;
+        $upahTotal            = $upahDasarPekerja + $totalIuranPerusahaan;
+
+        return [
+            'bpjs_kesehatan'          => $bpjsKesehatan,
+            'jkk'                     => $jkk,
+            'jkm'                     => $jkm,
+            'jht'                     => $jht,
+            'jp'                      => $jp,
+            'seragam_cs_dan_keamanan' => $seragam,
+            'fee_manajemen'           => $feeManajemen,
+            'upah_diterima_pekerja'   => $upahDasarPekerja,
+            'upah_total'              => $upahTotal,
+        ];
     }
 
     /**

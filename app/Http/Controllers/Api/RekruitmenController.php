@@ -87,6 +87,8 @@ public function store(Request $request): JsonResponse
 
         'nik' => [
             'required',
+            'regex:/^[0-9]+$/',
+            'max:15',
             'string',
             'max:16',
             function ($attribute, $value, $fail) use ($request) {

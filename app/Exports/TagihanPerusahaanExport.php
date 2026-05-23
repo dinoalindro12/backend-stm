@@ -171,8 +171,10 @@ class TagihanPerusahaanExport implements
                         $sheet->setCellValue("N{$row}", $tagihan->jumlah_hari_kerja ?? 0);
                         $sheet->setCellValue("O{$row}", $tagihan->gaji_harian ?? 0);
                         $sheet->setCellValue("P{$row}", $tagihan->jlh_lembur ?? 0);
-                        $sheet->setCellValue("Q{$row}", $tagihan->upah_diterima_pekerja ?? 0);
-                        $sheet->setCellValue("R{$row}", $tagihan->upah_total ?? 0);
+                        // Q: Upah Diterima Pekerja = (Gaji Harian × Hari Kerja) + Lembur + THR
+                        $sheet->setCellValue("Q{$row}", "=(O{$row}*N{$row})+P{$row}+M{$row}");
+                        // R: Total Tagihan = Upah Diterima Pekerja + semua iuran & fee perusahaan
+                        $sheet->setCellValue("R{$row}", "=Q{$row}+F{$row}+G{$row}+H{$row}+I{$row}+J{$row}+K{$row}+L{$row}");
 
                         $row++;
                     }
