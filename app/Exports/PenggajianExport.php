@@ -72,7 +72,7 @@ class PenggajianExport implements
                 ]);
                 $sheet->getRowDimension(1)->setRowHeight(30);
 
-                $sheet->setCellValue('A2', 'LAPORAN PENGGAJIAN KARYAWAN');
+                $sheet->setCellValue('A2', 'UNIT PT. SARI INCOFOOD CORPORATION ');
                 $sheet->mergeCells('A2:O2');
                 $sheet->getStyle('A2')->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 14, 'name' => 'Arial'],
@@ -103,8 +103,8 @@ class PenggajianExport implements
                 // ── Header tabel ───────────────────────────────────────────
                 $headers = [
                     'No', 'No Rekening BRI', 'NIK', 'Nama', 'Bagian',
-                    'Jumlah Penghasilan Kotor', 'BPJS Kesehatan', 'BPJS JHT', 'BPJS JP',
-                    'THR', 'Jumlah Hari Kerja', 'Satuan (Gaji Harian)', 'Lembur',
+                    'Jumlah Penghasilan Kotor', 'BPJS Kesehatan 1%', 'BPJS JHT 2%', 'BPJS JP 1%',
+                    'THR', 'QTY', 'SATUAN', 'LEMBUR & HARI BESAR',
                     'Upah Kotor Karyawan', 'Upah yang Diterima',
                 ];
                 $col = 'A';
@@ -226,8 +226,6 @@ class PenggajianExport implements
 
                 $sheet->getPageMargins()->setTop(0.5)->setRight(0.5)->setLeft(0.5)->setBottom(0.5);
                 $sheet->getHeaderFooter()
-                    ->setOddHeader('&C&"Arial,Bold"PT SURYA TAMADO MANDIRI - Laporan Penggajian');
-                $sheet->getHeaderFooter()
                     ->setOddFooter('&L&D &T&C&"Arial"Page &P of &N&R');
             },
         ];
@@ -238,11 +236,11 @@ class PenggajianExport implements
     private function getPosisiLabel(?string $posisi): string
     {
         $labels = [
-            'jasa'             => 'Jasa',
-            'supir'            => 'Supir',
-            'keamanan'         => 'Keamanan',
-            'cleaning_service' => 'Cleaning Service',
-            'operator'         => 'Operator',
+            'jasa'             => 'JASA',
+            'supir'            => 'SUPIR',
+            'keamanan'         => 'KEAMANAN',
+            'cleaning_service' => 'CLEANING SERVICE',
+            'operator'         => 'OPERATOR',
         ];
         return $labels[$posisi] ?? ucfirst((string) $posisi);
     }
