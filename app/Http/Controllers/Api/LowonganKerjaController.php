@@ -16,7 +16,7 @@ class LowonganKerjaController extends Controller
      */
     public function index(Request $request)
     {
-        $query = LowonganKerja::query();
+        $query = LowonganKerja::with('admin');
 
         // Filter berdasarkan status
         if ($request->has('status')) {

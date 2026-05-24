@@ -44,11 +44,12 @@ class LowonganKerja extends Model
 
     /**
      * Relasi dengan Admin (User)
-     * Lowongan kerja diposting oleh seorang Admin
+     * Lowongan kerja diposting oleh seorang Admin.
+     * withTrashed() memastikan relasi tetap terbaca meski admin sudah dihapus.
      */
     public function admin(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'admin_id');
+        return $this->belongsTo(User::class, 'admin_id')->withTrashed();
     }
 
     /**

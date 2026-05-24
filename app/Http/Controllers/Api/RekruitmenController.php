@@ -88,7 +88,7 @@ public function store(Request $request): JsonResponse
         'nik' => [
             'required',
             'regex:/^[0-9]+$/',
-            'max:15',
+            'max:16',
             'string',
             'max:16',
             function ($attribute, $value, $fail) use ($request) {
@@ -118,6 +118,19 @@ public function store(Request $request): JsonResponse
 
         'surat_lamaran' => 'required|file|mimes:pdf|max:2048',
         'cv' => 'required|file|mimes:pdf|max:2048',
+    ],[
+        'nik.regex' => 'NIK harus berupa angka saja.',
+        'nik.max' => 'NIK tidak boleh lebih dari 16 karakter.',
+        'nik.string' => 'NIK harus berupa string.',
+        'nik.unique' => 'Anda sudah pernah melamar di lowongan yang sama sebelumnya.',
+        'foto_ktp.required' => 'Foto KTP wajib diunggah.',
+        'foto_kk.required' => 'Foto KK wajib diunggah.',
+        'foto_skck.required' => 'Foto SKCK wajib diunggah.',
+        'pas_foto.required' => 'Pas foto wajib diunggah.',
+        'surat_sehat.required' => 'Surat sehat wajib diunggah.',
+        'surat_anti_narkoba.required' => 'Surat anti narkoba wajib diunggah.',
+        'surat_lamaran.required' => 'Surat lamaran wajib diunggah.',
+        'cv.required' => 'CV wajib diunggah.',
     ]);
 
     // Jika validasi gagal
