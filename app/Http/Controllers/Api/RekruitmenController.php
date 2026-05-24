@@ -105,7 +105,7 @@ public function store(Request $request): JsonResponse
         'nama' => 'required|string|max:255',
         'nama_lengkap' => 'required|string|max:255',
         'posisi_dilamar' => 'required|string|max:255',
-        'no_wa' => 'required|string|max:20',
+        'no_wa' => 'required|regex:/^[0-9]+$/|string|max:16',
         'alamat' => 'nullable|string',
 
         'foto_ktp' => 'required|image|mimes:jpeg,png,jpg|max:2048',
@@ -120,6 +120,7 @@ public function store(Request $request): JsonResponse
         'cv' => 'required|file|mimes:pdf|max:2048',
     ],[
         'nik.regex' => 'NIK harus berupa angka saja.',
+        'no_wa.regex' => 'Nomor WhatsApp harus berupa angka saja.',
         'nik.max' => 'NIK tidak boleh lebih dari 16 karakter.',
         'nik.string' => 'NIK harus berupa string.',
         'nik.unique' => 'Anda sudah pernah melamar di lowongan yang sama sebelumnya.',
@@ -255,11 +256,11 @@ public function store(Request $request): JsonResponse
 
         $validator = Validator::make($request->all(), [
             'lowongan_kerja_id' => 'sometimes|required|exists:lowongan_kerja,id',
-            'nik' => 'sometimes|required|string|max:16|unique:rekruitmen,nik,' . $id,
+            'nik' => 'sometimes|required|max:16|unique:rekruitmen,nik,' . $id,
             'nama' => 'sometimes|required|string|max:255',
             'nama_lengkap' => 'sometimes|required|string|max:255',
             'posisi_dilamar' => 'sometimes|required|string|max:255',
-            'no_wa' => 'sometimes|required|string|max:20',
+            'no_wa' => 'sometimes|regex:/^[0-9]+$/|string|max:16',
             'alamat' => 'nullable|string',
             'status_terima' => 'sometimes|required|in:pending,diterima,ditolak',
             'catatan' => 'nullable|string',
@@ -272,6 +273,12 @@ public function store(Request $request): JsonResponse
             'surat_anti_narkoba' => 'sometimes|file|mimes:pdf,jpeg,png,jpg|max:2048',
             'surat_lamaran' => 'sometimes|file|mimes:pdf|max:2048',
             'cv' => 'sometimes|file|mimes:pdf|max:2048',
+        ],
+        [
+            'nik.regex' => 'NIK harus berupa angka saja.',
+            'no_wa.regex' => 'Nomor WhatsApp harus berupa angka saja.',
+            'nik.max' => 'NIK tidak boleh lebih dari 16 karakter.',
+            'nik.unique' => 'NIK sudah digunakan oleh pelamar lain.',
         ]);
 
         if ($validator->fails()) {
