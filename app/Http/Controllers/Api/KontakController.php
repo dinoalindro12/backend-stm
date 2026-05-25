@@ -75,6 +75,9 @@ public function store(Request $request): JsonResponse
         'perusahaan' => 'nullable|string|max:255',
         'subjek' => 'required|string|max:255',
         'isi' => 'required|string',          
+    ], [
+        'no_wa.max' => 'Maaf, nomor WhatsApp maksimal 15 digit',
+        'no_wa.regex' => 'Maaf, nomor WhatsApp hanya boleh berisi angka',
     ]);
 
     if ($validator->fails()) {

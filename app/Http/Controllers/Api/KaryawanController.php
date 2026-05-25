@@ -84,7 +84,7 @@ class KaryawanController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'nik'           => 'required|unique:karyawans,nik|string|regex:/^[0-9]+$/|max:16',
-                'no_rek_bri'    => 'nullable|unique:karyawans,no_rek_bri|string|regex:/^[0-9]+$/|max:15',
+                'no_rek_bri'    => 'nullable|unique:karyawans,no_rek_bri|string|regex:/^[0-9]+$/|max:16',
                 'nama_lengkap'  => 'required|string|max:100',
                 'posisi'        => 'required|string|in:jasa,supir,keamanan,cleaning_service,operator',
                 'email'         => 'nullable|email|unique:karyawans,email|max:100',
@@ -101,6 +101,7 @@ class KaryawanController extends Controller
                 'image.max' => 'Maaf, ukuran gambar maksimal 5MB',
                 'image.mimes' => 'Maaf, format gambar harus jpeg, png, jpg, svg, atau webp',
                 'no_wa.unique' => 'Maaf, nomor  WhatsApp yang anda masukan sudah terdaftar',
+                'no_rek_bri.max' => 'Maaf, nomor rekening BRI maksimal 16 digit',
             ]);
 
             if ($validator->fails()) {
@@ -218,6 +219,9 @@ class KaryawanController extends Controller
             ], [
                 'nik.unique' => 'NIK sudah terdaftar',
                 'no_rek_bri.unique' => 'No Rekening BRI sudah terdaftar',
+                'no_rek_bri.max' => 'Maaf, nomor rekening BRI maksimal 16 digit',
+                'no_wa.unique' => 'Nomor WhatsApp sudah terdaftar',
+                'no_wa.max' => 'Maaf, nomor WhatsApp maksimal 15 digit',
                 'email.unique' => 'Email sudah terdaftar',
                 'image.max' => 'Ukuran gambar maksimal 5MB',
                 'image.mimes' => 'Format gambar harus jpeg, png, jpg, svg, atau webp',
