@@ -70,7 +70,7 @@ class TagihanPerusahaan extends Model
      */
     public function admin(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'admin_id');
+        return $this->belongsTo(User::class, 'admin_id')->withTrashed();
     }
 
     /**
@@ -78,7 +78,7 @@ class TagihanPerusahaan extends Model
      */
     public function updatedBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'updated_by');
+        return $this->belongsTo(User::class, 'updated_by')->withTrashed();
     }
 
     /**
