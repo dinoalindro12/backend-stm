@@ -573,47 +573,29 @@ class KaryawanController extends Controller
     public function export(Request $request)
     {
         try {
-            $query = Karyawan::query();
-            
+            $query = Karyawan::with(['admin', 'updatedBy']);
+
             if ($request->has('status_aktif')) {
                 $query->where('status_aktif', $request->status_aktif);
             }
-            
+
             if ($request->filled('posisi')) {
                 $query->where('posisi', $request->posisi);
             }
-            
+
             $karyawan = $query->orderBy('nama_lengkap')->get();
-            
-            // Format data untuk export
-            $exportData = $karyawan->map(function($item) {
-                return [
-                    'nomor_induk' => $item->nomor_induk,
-                    'nik' => $item->nik,
-                    'nama_lengkap' => $item->nama_lengkap,
-                    'posisi' => $item->posisi,
-                    'email' => $item->email,
-                    'no_wa' => $item->no_wa,
-                    'alamat' => $item->alamat,
-                    'tanggal_masuk' => $item->tanggal_masuk->format('d/m/Y'),
-                    'tanggal_keluar' => $item->tanggal_keluar ? $item->tanggal_keluar->format('d/m/Y') : '-',
-                    'status_aktif' => $item->status_aktif ? 'Aktif' : 'Tidak Aktif',
-                    'created_at' => $item->created_at->format('d/m/Y H:i'),
-                ];
-            });
-            
-            return response()->json([
+
+            return KaryawanResource::collection($karyawan)->additional([
                 'success' => true,
                 'message' => 'Data siap untuk diexport',
-                'data' => $exportData,
-                'total' => $exportData->count()
+                'total'   => $karyawan->count(),
             ]);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menyiapkan data export',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+                'error'   => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }
     }

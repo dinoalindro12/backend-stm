@@ -23,18 +23,21 @@ class DashboardController extends Controller
     public function getDashboardData(Request $request): JsonResponse
     {
         $data = [
-            'stats'        => $this->getStatsData(),
-            'summary'      => $this->getSummaryData(),
-            'charts'       => [
+            'stats'       => $this->getStatsData(),
+            'summary'     => $this->getSummaryData(),
+            'charts'      => [
                 'gaji'    => $this->getGajiChartData($request),
                 'pelamar' => $this->getPelamarChartData($request),
             ],
-            'recent_data'  => $this->getRecentData(),
-            'success'      => true,
-            'message'      => 'Data Dashboard berhasil diambil',
+            'recent_data' => $this->getRecentData(),
         ];
 
-        return response()->json(new DashboardResource($data));
+        return (new DashboardResource($data))
+            ->additional([
+                'success' => true,
+                'message' => 'Data Dashboard berhasil diambil',
+            ])
+            ->response();
     }
 
     /**

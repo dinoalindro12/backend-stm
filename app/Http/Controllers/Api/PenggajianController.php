@@ -668,7 +668,7 @@ class PenggajianController extends Controller
     {
         $bulanTahun = $penggajian->gajian_bulan->translatedFormat('F Y');
 
-        $pesan = "🧾 PT SURYA TAMADO MANDIRI - {$bulanTahun}*\n\n";
+        $pesan = "* 🧾 PT SURYA TAMADO MANDIRI *";
         $pesan .= "━━━━━━━━━━━━━━━━━━━━\n\n";
         $pesan .= "MASA KERJA : {$bulanTahun}\n";
         $pesan .= "*📋 Informasi Karyawan:*\n";

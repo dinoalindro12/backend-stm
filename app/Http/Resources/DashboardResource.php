@@ -67,13 +67,11 @@ class DashboardResource extends JsonResource
                 'pelamar' => $this['charts']['pelamar'] ?? null
             ],
             'recent_data' => [
-                'karyawan' => $this['recent_data']['karyawan'] ?? [],
+                'karyawan'   => $this['recent_data']['karyawan']   ?? [],
                 'penggajian' => $this['recent_data']['penggajian'] ?? [],
                 'rekruitmen' => $this['recent_data']['rekruitmen'] ?? [],
-                'lowongan' => $this['recent_data']['lowongan'] ?? []
+                'lowongan'   => $this['recent_data']['lowongan']   ?? [],
             ],
-            'success' => $this['success'] ?? true,
-            'message' => $this['message'] ?? 'Data dashboard berhasil diambil'
         ];
     }
 }
