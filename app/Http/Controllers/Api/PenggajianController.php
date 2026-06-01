@@ -668,11 +668,12 @@ class PenggajianController extends Controller
     {
         $bulanTahun = $penggajian->gajian_bulan->translatedFormat('F Y');
 
-        $pesan = "🧾 *SLIP GAJI - {$bulanTahun}*\n\n";
-        $pesan .= "━━━━━━━━━━━━━━━━━━━━\n\n";
+        $pesan = "🧾 PT SURYA TAMADO MANDIRI - {$bulanTahun}*\n\n";
+        $pesan = "━━━━━━━━━━━━━━━━━━━━\n\n";
+        $pesan = "MASA KERJA : {$bulanTahun}\n";
         $pesan .= "*📋 Informasi Karyawan:*\n";
-        $pesan .= "Nama: " . optional($penggajian->karyawan)->nama_lengkap . "\n";
-        $pesan .= "No. Induk: " . optional($penggajian->karyawan)->nomor_induk . "\n";
+        $pesan .= "NAMA: " . optional($penggajian->karyawan)->nama_lengkap . "\n";
+        $pesan .= "No. INDUK: " . optional($penggajian->karyawan)->nomor_induk . "\n";
         $pesan .= "Posisi: " . ucfirst(str_replace('_', ' ', optional($penggajian->karyawan)->posisi)) . "\n\n";
         
         $pesan .= "*💰 Rincian Gaji:*\n";
