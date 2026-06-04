@@ -143,7 +143,7 @@ class PenggajianController extends Controller
                 'uang_thr'                 => $request->uang_thr ?? 0,
                 'jumlah_hari_kerja'        => $request->jumlah_hari_kerja,
                 'gaji_harian'              => $request->gaji_harian,
-                'jumlah_lembur'            => $request->jumlah_lembur,
+                'jumlah_lembur'            => $request->jumlah_lembur ?? 0,
                 'gajian_bulan'             => $bulanGajian,
                 ...$kalkulasi,
             ]);
