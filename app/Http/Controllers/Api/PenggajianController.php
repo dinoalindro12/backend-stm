@@ -92,7 +92,7 @@ class PenggajianController extends Controller
             'uang_thr'                 => 'nullable|numeric|min:0',
             'jumlah_hari_kerja'        => "required|numeric|min:0|max:{$maxHariKerja}",
             'gaji_harian'              => 'required|numeric|min:0',
-            'jumlah_lembur'            => 'required|numeric|min:0',
+            'jumlah_lembur'            => 'nullable|numeric|min:0',
             'gajian_bulan'             => 'nullable|date',
         ], [
             'jumlah_hari_kerja.max' => "Jumlah hari kerja tidak boleh melebihi {$maxHariKerja} hari (jumlah hari dalam bulan tersebut).",

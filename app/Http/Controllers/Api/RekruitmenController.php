@@ -107,15 +107,12 @@ public function store(Request $request): JsonResponse
         'posisi_dilamar' => 'required|string|max:255',
         'no_wa' => 'required|regex:/^[0-9]+$/|string|max:16',
         'alamat' => 'nullable|string',
-
         'foto_ktp' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         'foto_kk' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         'foto_skck' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         'pas_foto' => 'required|image|mimes:jpeg,png,jpg|max:2048',
-
         'surat_sehat' => 'required|file|mimes:pdf,jpeg,png,jpg|max:2048',
         'surat_anti_narkoba' => 'required|file|mimes:pdf,jpeg,png,jpg|max:2048',
-
         'surat_lamaran' => 'required|file|mimes:pdf|max:2048',
         'cv' => 'required|file|mimes:pdf|max:2048',
     ],[
@@ -276,7 +273,7 @@ public function store(Request $request): JsonResponse
         ],
         [
             'nik.regex' => 'NIK harus berupa angka saja.',
-            'no_wa.regex' => 'Nomor WhatsApp harus berupa angka saja.',
+            'no_wa.regex' => 'Maaf, nomor WhatsApp yang anda masukan tidak  valid.',
             'nik.max' => 'NIK tidak boleh lebih dari 16 karakter.',
             'nik.unique' => 'NIK sudah digunakan oleh pelamar lain.',
             'no_wa.max' => 'Maaf, nomor WhatsApp maksimal 16 digit',

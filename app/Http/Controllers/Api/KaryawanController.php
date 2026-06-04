@@ -99,6 +99,7 @@ class KaryawanController extends Controller
                 'no_rek_bri.unique' => 'Maaf, nomor Rekening BRI sudah terdaftar',
                 'email.unique' => 'Maaf, email sudah terdaftar',
                 'image.max' => 'Maaf, ukuran gambar maksimal 5MB',
+                'no_wa.regex' => "Maaf, format nomor WhatsApp yang anda masukan tidak valid"
                 'image.mimes' => 'Maaf, format gambar harus jpeg, png, jpg, svg, atau webp',
                 'no_wa.unique' => 'Maaf, nomor  WhatsApp yang anda masukan sudah terdaftar',
                 'no_rek_bri.max' => 'Maaf, nomor rekening BRI maksimal 16 digit',
@@ -222,6 +223,7 @@ class KaryawanController extends Controller
                 'no_rek_bri.max' => 'Maaf, nomor rekening BRI maksimal 16 digit',
                 'no_wa.unique' => 'Nomor WhatsApp sudah terdaftar',
                 'no_wa.max' => 'Maaf, nomor WhatsApp maksimal 15 digit',
+                'no_wa.regex' => "Maaf, format nomor WhatsApp yang anda masukan tidak valid"
                 'email.unique' => 'Email sudah terdaftar',
                 'image.max' => 'Ukuran gambar maksimal 5MB',
                 'image.mimes' => 'Format gambar harus jpeg, png, jpg, svg, atau webp',

@@ -171,7 +171,10 @@ public function store(Request $request): JsonResponse
                 'perusahaan' => 'nullable|string|max:255',
                 'subjek' => 'sometimes|required|string|max:255',
                 'isi' => 'sometimes|required|string',
-            ]);
+            ],
+        [
+            
+        ]);
 
             if ($validator->fails()) {
                 return response()->json([
