@@ -83,6 +83,7 @@ class KaryawanController extends Controller
         
         try {
             $validator = Validator::make($request->all(), [
+                'nomor_induk'   => 'required|unique:karyawans,nomor_induk|string|max:20',
                 'nik'           => 'required|unique:karyawans,nik|string|regex:/^[0-9]+$/|max:16',
                 'no_rek_bri'    => 'nullable|unique:karyawans,no_rek_bri|string|regex:/^[0-9]+$/|max:16',
                 'nama_lengkap'  => 'required|string|max:100',
@@ -95,6 +96,7 @@ class KaryawanController extends Controller
                 'tanggal_keluar'=> 'nullable|date|after_or_equal:tanggal_masuk',
                 'status_aktif'  => 'required|boolean',
             ], [
+                'nomor_induk.unique' => 'Maaf, nomor induk sudah terdaftar',
                 'nik.unique' => 'Maaf, NIK sudah terdaftar',
                 'no_rek_bri.unique' => 'Maaf, nomor Rekening BRI sudah terdaftar',
                 'email.unique' => 'Maaf, email sudah terdaftar',

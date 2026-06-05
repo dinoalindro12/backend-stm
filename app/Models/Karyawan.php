@@ -65,43 +65,15 @@ class Karyawan extends Model
     }
 
     /**
-     * Auto-generate nomor_induk saat karyawan baru dibuat.
-     * Format: KRY-001, KRY-002, dst.
-     * CATATAN: harus dipanggil di dalam DB::transaction() agar lockForUpdate efektif.
+     * Auto-set status_aktif menjadi false saat karyawan dihapus (soft delete).
      */
     protected static function boot(): void
     {
         parent::boot();
 
-        static::creating(function (self $karyawan) {
-            if (empty($karyawan->nomor_induk)) {
-                $karyawan->nomor_induk = static::generateNomorInduk();
-            }
-        });
-
         static::deleting(function (self $karyawan) {
-            // Set status_aktif menjadi false saat karyawan dihapus (soft delete)
             $karyawan->status_aktif = false;
             $karyawan->saveQuietly();
         });
-    }
-
-    /**
-     * Generate nomor induk berikutnya.
-     * lockForUpdate mencegah race condition — harus dipanggil dalam transaksi.
-     */
-    public static function generateNomorInduk(): string
-    {
-        $last = static::withTrashed()
-            ->where('nomor_induk', 'like', 'KRY-%')
-            ->orderByRaw("CAST(SUBSTR(nomor_induk, 5) AS UNSIGNED) DESC")
-            ->lockForUpdate()
-            ->first();
-
-        $nextNumber = $last
-            ? ((int) substr($last->nomor_induk, 4)) + 1  // ambil angka setelah "KRY-"
-            : 1;
-
-        return 'KRY-' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
     }
 }
