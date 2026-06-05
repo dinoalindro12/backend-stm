@@ -789,7 +789,7 @@ class TagihanPerusahaanController extends Controller
                 $dataBaru = [
                     'karyawan_id' => $referensi->karyawan_id,
                     'jumlah_penghasilan_kotor' => $referensi->jumlah_penghasilan_kotor,
-                    'jumlah_hari_kerja' => $referensi->jumlah_hari_kerja,
+                    'jumlah_hari_kerja' => 0,
                     'gaji_harian' => $referensi->gaji_harian,
                     'tagihan_bulan' => $bulanTujuan->format('Y-m-d'),
                     'admin_id' => $request->user()->id,
@@ -828,6 +828,20 @@ class TagihanPerusahaanController extends Controller
             }
 
             DB::commit();
+
+            // Semua data sudah ada, tidak ada yang berhasil dibuat
+            if (empty($created)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data tidak berhasil dibuat, record tagihan ' .
+                        $this->getBulanIndonesia($bulanTujuan->format('n')) . ' ' . $bulanTujuan->format('Y') . ' sudah ada',
+                    'data'    => [
+                        'created_count' => 0,
+                        'skipped_count' => count($skipped),
+                        'skipped'       => $skipped,
+                    ]
+                ], 409);
+            }
 
             $message = count($created) . ' data tagihan berhasil disalin';
             if (!empty($skipped)) {

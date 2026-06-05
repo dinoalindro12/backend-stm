@@ -844,7 +844,7 @@ class PenggajianController extends Controller
                     'updated_by'               => $adminId,
                     'jumlah_penghasilan_kotor' => $referensi->jumlah_penghasilan_kotor,
                     'uang_thr'                 => $adjustThr ? 0 : $referensi->uang_thr,
-                    'jumlah_hari_kerja'        => $referensi->jumlah_hari_kerja,
+                    'jumlah_hari_kerja'        => 0,
                     'gaji_harian'              => $referensi->gaji_harian,
                     'jumlah_lembur'            => 0,
                     'gajian_bulan'             => $bulanBaru,
@@ -852,7 +852,7 @@ class PenggajianController extends Controller
                     'tanggal_cetak'            => null,
                     ...$this->hitungPenggajian(
                         jumlahPenghasilanKotor: $referensi->jumlah_penghasilan_kotor,
-                        jumlahHariKerja:        $referensi->jumlah_hari_kerja,
+                        jumlahHariKerja:        0,
                         gajiHarian:             $referensi->gaji_harian,
                         jumlahLembur:           0,
                         uangThr:                $adjustThr ? 0 : $referensi->uang_thr,
@@ -864,6 +864,21 @@ class PenggajianController extends Controller
             }
 
             DB::commit();
+
+            // Semua data sudah ada, tidak ada yang berhasil dibuat
+            if (empty($created)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data tidak berhasil dibuat, record penggajian ' . $bulanBaru->translatedFormat('F Y') . ' sudah ada',
+                    'data'    => [
+                        'bulan_referensi' => $bulanReferensi->translatedFormat('F Y'),
+                        'bulan_baru'      => $bulanBaru->translatedFormat('F Y'),
+                        'created_count'   => 0,
+                        'skipped_count'   => count($skipped),
+                        'skipped'         => $skipped,
+                    ]
+                ], 409);
+            }
 
             $response = [
                 'success' => true,
