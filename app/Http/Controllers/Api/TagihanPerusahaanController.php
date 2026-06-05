@@ -700,8 +700,8 @@ class TagihanPerusahaanController extends Controller
     public function copyFromPreviousMonth(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'bulan_referensi' => 'required|date_format:Y-m',
-            'bulan_tujuan' => 'required|date_format:Y-m|after:bulan_referensi',
+            'bulan_referensi' => 'required|date',
+            'bulan_tujuan' => 'required|date|after:bulan_referensi',
             'karyawan_id' => 'nullable|array',
             'karyawan_id.*' => 'exists:karyawans,id',
             'reset_lembur_thr' => 'nullable|boolean',
@@ -720,8 +720,8 @@ class TagihanPerusahaanController extends Controller
             DB::beginTransaction();
 
             // Parse bulan
-            $bulanReferensi = Carbon::parse($request->bulan_referensi . '-01')->startOfMonth();
-            $bulanTujuan = Carbon::parse($request->bulan_tujuan . '-01')->startOfMonth();
+            $bulanReferensi = Carbon::parse($request->bulan_referensi)->startOfMonth();
+            $bulanTujuan = Carbon::parse($request->bulan_tujuan)->startOfMonth();
 
             // Validasi bulan tujuan harus setelah bulan referensi
             if ($bulanTujuan->lte($bulanReferensi)) {
@@ -824,35 +824,23 @@ class TagihanPerusahaanController extends Controller
                     seragam:                $dataBaru['seragam_cs_dan_keamanan'],
                     feeManajemen:           $dataBaru['fee_manajemen'],
                 )));
-                $created[] = $tagihanBaru;
+                $created[] = $tagihanBaru->load(['karyawan', 'admin', 'updatedBy']);
             }
 
             DB::commit();
 
-            $response = [
-                'success' => true,
-                'message' => count($created) . ' data tagihan berhasil disalin',
-                'data' => [
-                    'bulan_referensi' => [
-                        'value' => $bulanReferensi->format('Y-m'),
-                        'text' => $this->getBulanIndonesia($bulanReferensi->format('n')) . ' ' . $bulanReferensi->format('Y'),
-                    ],
-                    'bulan_tujuan' => [
-                        'value' => $bulanTujuan->format('Y-m'),
-                        'text' => $this->getBulanIndonesia($bulanTujuan->format('n')) . ' ' . $bulanTujuan->format('Y'),
-                    ],
-                    'created_count' => count($created),
-                    'skipped_count' => count($skipped),
-                    'created' => TagihanPerusahaanResource::collection(collect($created)),
-                ]
-            ];
-
+            $message = count($created) . ' data tagihan berhasil disalin';
             if (!empty($skipped)) {
-                $response['data']['skipped'] = $skipped;
-                $response['message'] .= ', ' . count($skipped) . ' data dilewati karena sudah ada';
+                $message .= ', ' . count($skipped) . ' data dilewati karena sudah ada';
             }
 
-            return response()->json($response, 201);
+            return TagihanPerusahaanResource::collection(collect($created))
+                ->additional([
+                    'success' => true,
+                    'message' => $message,
+                ])
+                ->response()
+                ->setStatusCode(201);
 
         } catch (\Exception $e) {
             DB::rollBack();

@@ -799,7 +799,8 @@ class PenggajianController extends Controller
             $adminId        = $request->user()->id;
 
             // Query penggajian bulan referensi
-            $query = Penggajian::where('gajian_bulan', $bulanReferensi);
+            $query = Penggajian::whereYear('gajian_bulan', $bulanReferensi->year)
+                ->whereMonth('gajian_bulan', $bulanReferensi->month);
 
             if ($request->has('karyawan_id') && !empty($request->karyawan_id)) {
                 $query->whereIn('karyawan_id', $request->karyawan_id);
@@ -818,7 +819,8 @@ class PenggajianController extends Controller
             // Cek duplikasi untuk bulan baru
             $karyawanIdList = $penggajianReferensi->pluck('karyawan_id')->toArray();
             $existingPenggajian = Penggajian::whereIn('karyawan_id', $karyawanIdList)
-                ->where('gajian_bulan', $bulanBaru)
+                ->whereYear('gajian_bulan', $bulanBaru->year)
+                ->whereMonth('gajian_bulan', $bulanBaru->month)
                 ->pluck('karyawan_id')
                 ->toArray();
 

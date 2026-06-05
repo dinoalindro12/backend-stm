@@ -236,7 +236,6 @@ public function store(Request $request): JsonResponse
             'data' => new RekruitmenResource($rekruitmen)
         ]);
     }
-
     /**
      * Update the specified resource in storage.
      */
