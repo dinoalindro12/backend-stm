@@ -83,7 +83,7 @@ class KaryawanController extends Controller
         
         try {
             $validator = Validator::make($request->all(), [
-                'nomor_induk'   => 'required|unique:karyawans,nomor_induk|string|max:20',
+                'nomor_induk'   => 'required|unique:karyawans,nomor_induk|regex:/^[0-9]+$/|max:',
                 'nik'           => 'required|unique:karyawans,nik|string|regex:/^[0-9]+$/|max:16',
                 'no_rek_bri'    => 'nullable|unique:karyawans,no_rek_bri|string|regex:/^[0-9]+$/|max:16',
                 'nama_lengkap'  => 'required|string|max:100',
@@ -1080,6 +1080,163 @@ class KaryawanController extends Controller
         }
         
     }
+    /**
+     * Batch insert karyawan dari array JSON.
+     * Posisi di-normalize ke lowercase. NIK boleh sampai 20 digit untuk data lama.
+     */
+    public function batchStore(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'data'                    => 'required|array|min:1',
+            'data.*.nomor_induk'      => 'required|string|max:20|distinct',
+            'data.*.nik'              => 'required|string|regex:/^[0-9]+$/|max:20|distinct',
+            'data.*.nama_lengkap'     => 'required|string|max:100',
+            'data.*.posisi'           => 'required|string',
+            'data.*.no_rek_bri'       => 'nullable|string|regex:/^[0-9]+$/|max:20|distinct',
+            'data.*.email'            => 'nullable|email|max:100|distinct',
+            'data.*.alamat'           => 'required|string',
+            'data.*.no_wa'            => 'required|string|regex:/^[0-9]+$/|max:15|distinct',
+            'data.*.tanggal_masuk'    => 'required|date',
+            'data.*.tanggal_keluar'   => 'nullable|date',
+            'data.*.status_aktif'     => 'required|boolean',
+        ], [
+            'data.*.nomor_induk.required'  => 'Baris :index: nomor_induk wajib diisi',
+            'data.*.nomor_induk.distinct'  => 'Baris :index: nomor_induk duplikat dalam request',
+            'data.*.nik.required'          => 'Baris :index: NIK wajib diisi',
+            'data.*.nik.distinct'          => 'Baris :index: NIK duplikat dalam request',
+            'data.*.nik.regex'             => 'Baris :index: NIK hanya boleh angka',
+            'data.*.nama_lengkap.required' => 'Baris :index: nama_lengkap wajib diisi',
+            'data.*.posisi.required'       => 'Baris :index: posisi wajib diisi',
+            'data.*.no_wa.required'        => 'Baris :index: no_wa wajib diisi',
+            'data.*.no_wa.regex'           => 'Baris :index: no_wa hanya boleh angka',
+            'data.*.no_wa.distinct'        => 'Baris :index: no_wa duplikat dalam request',
+            'data.*.email.distinct'        => 'Baris :index: email duplikat dalam request',
+            'data.*.no_rek_bri.distinct'   => 'Baris :index: no_rek_bri duplikat dalam request',
+            'data.*.tanggal_masuk.required'=> 'Baris :index: tanggal_masuk wajib diisi',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
+            ], 422);
+        }
+
+        // Validasi posisi valid
+        $validPosisi = ['jasa', 'supir', 'keamanan', 'cleaning_service', 'operator'];
+        $posisiErrors = [];
+        foreach ($request->data as $index => $item) {
+            $posisi = strtolower($item['posisi'] ?? '');
+            if (!in_array($posisi, $validPosisi)) {
+                $posisiErrors["data.{$index}.posisi"] = ["Posisi '{$item['posisi']}' tidak valid. Pilihan: " . implode(', ', $validPosisi)];
+            }
+        }
+        if (!empty($posisiErrors)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi posisi gagal',
+                'errors'  => $posisiErrors
+            ], 422);
+        }
+
+        // Cek duplikasi dengan database
+        $nomorIndukList = array_column($request->data, 'nomor_induk');
+        $nikList        = array_column($request->data, 'nik');
+        $emailList      = array_filter(array_column($request->data, 'email'));
+        $noWaList       = array_column($request->data, 'no_wa');
+        $noRekList      = array_filter(array_column($request->data, 'no_rek_bri'));
+
+        $dupErrors = [];
+
+        $existNomorInduk = Karyawan::withTrashed()->whereIn('nomor_induk', $nomorIndukList)->pluck('nomor_induk')->toArray();
+        if (!empty($existNomorInduk)) {
+            $dupErrors['nomor_induk'] = ['Nomor induk sudah terdaftar: ' . implode(', ', $existNomorInduk)];
+        }
+
+        $existNik = Karyawan::withTrashed()->whereIn('nik', $nikList)->pluck('nik')->toArray();
+        if (!empty($existNik)) {
+            $dupErrors['nik'] = ['NIK sudah terdaftar: ' . implode(', ', $existNik)];
+        }
+
+        if (!empty($emailList)) {
+            $existEmail = Karyawan::withTrashed()->whereIn('email', $emailList)->pluck('email')->toArray();
+            if (!empty($existEmail)) {
+                $dupErrors['email'] = ['Email sudah terdaftar: ' . implode(', ', $existEmail)];
+            }
+        }
+
+        $existNoWa = Karyawan::withTrashed()->whereIn('no_wa', $noWaList)->pluck('no_wa')->toArray();
+        if (!empty($existNoWa)) {
+            $dupErrors['no_wa'] = ['No. WhatsApp sudah terdaftar: ' . implode(', ', $existNoWa)];
+        }
+
+        if (!empty($noRekList)) {
+            $existNoRek = Karyawan::withTrashed()->whereIn('no_rek_bri', $noRekList)->pluck('no_rek_bri')->toArray();
+            if (!empty($existNoRek)) {
+                $dupErrors['no_rek_bri'] = ['No. Rekening BRI sudah terdaftar: ' . implode(', ', $existNoRek)];
+            }
+        }
+
+        if (!empty($dupErrors)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Terdapat data duplikat dengan database',
+                'errors'  => $dupErrors
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $adminId = $request->user()->id;
+            $created = [];
+
+            foreach ($request->data as $item) {
+                $karyawan = Karyawan::create([
+                    'nomor_induk'    => $item['nomor_induk'],
+                    'nik'            => $item['nik'],
+                    'nama_lengkap'   => $item['nama_lengkap'],
+                    'posisi'         => strtolower($item['posisi']),
+                    'no_rek_bri'     => $item['no_rek_bri'] ?? null,
+                    'email'          => $item['email'] ?? null,
+                    'alamat'         => $item['alamat'],
+                    'no_wa'          => $item['no_wa'],
+                    'tanggal_masuk'  => $item['tanggal_masuk'],
+                    'tanggal_keluar' => $item['tanggal_keluar'] ?? null,
+                    'status_aktif'   => $item['status_aktif'],
+                    'admin_id'       => $adminId,
+                    'updated_by'     => $adminId,
+                ]);
+
+                $created[] = $karyawan;
+            }
+
+            DB::commit();
+
+            return KaryawanResource::collection(
+                    Karyawan::with(['admin', 'updatedBy'])
+                        ->whereIn('id', collect($created)->pluck('id'))
+                        ->get()
+                )
+                ->additional([
+                    'success' => true,
+                    'message' => count($created) . ' data karyawan berhasil disimpan',
+                ])
+                ->response()
+                ->setStatusCode(201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan data karyawan',
+                'error'   => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
     public function restoreByNik(Request $request)
     {
         DB::beginTransaction();

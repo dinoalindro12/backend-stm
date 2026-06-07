@@ -60,6 +60,7 @@ Route::middleware('auth:sanctum')->prefix('karyawan')->group(function () {
     Route::post('/bulk-download-kartu', [KaryawanController::class, 'bulkDownloadKartuPdf']);
     Route::post('/restore-by-nik', [KaryawanController::class, 'restoreByNik']);
     Route::post('/import', [KaryawanController::class, 'import'])->name('karyawan.import');
+    Route::post('/batch', [KaryawanController::class, 'batchStore']);
     Route::get('/import/template', [KaryawanController::class, 'downloadTemplate'])->name('karyawan.import.template');
     Route::post('/import/preview', [KaryawanController::class, 'importPreview'])->name('karyawan.import.preview');
     Route::get('/import/status', [KaryawanController::class, 'importStatus'])->name('karyawan.import.status');
