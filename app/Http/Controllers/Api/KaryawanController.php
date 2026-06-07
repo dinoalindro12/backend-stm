@@ -83,7 +83,7 @@ class KaryawanController extends Controller
         
         try {
             $validator = Validator::make($request->all(), [
-                'nomor_induk'   => 'required|unique:karyawans,nomor_induk|string|max:20',
+                'nomor_induk'   => 'required|unique:karyawans,nomor_induk|string|regex:/^[0-9]+$/|max:20',
                 'nik'           => 'required|unique:karyawans,nik|string|regex:/^[0-9]+$/|max:16',
                 'no_rek_bri'    => 'nullable|unique:karyawans,no_rek_bri|string|regex:/^[0-9]+$/|max:16',
                 'nama_lengkap'  => 'required|string|max:100',
