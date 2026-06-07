@@ -502,6 +502,155 @@ class TagihanPerusahaanController extends Controller
     }
 
     /**
+     * Bulk store — setiap item memiliki field lengkap seperti method store.
+     */
+    public function bulkStore(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'data'                                    => 'required|array|min:1',
+            'data.*.karyawan_id'                      => 'required|exists:karyawans,id',
+            'data.*.jumlah_penghasilan_kotor'         => 'required|numeric|min:0',
+            'data.*.jumlah_hari_kerja'                => 'required|numeric|min:0',
+            'data.*.gaji_harian'                      => 'required|numeric|min:0',
+            'data.*.jlh_lembur'                       => 'nullable|numeric|min:0',
+            'data.*.thr'                              => 'nullable|numeric|min:0',
+            'data.*.seragam_cs_dan_keamanan'          => 'nullable|numeric|min:0',
+            'data.*.fee_manajemen'                    => 'nullable|numeric|min:0',
+            'data.*.tagihan_bulan'                    => 'nullable|date',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $adminId    = $request->user()->id;
+            $created    = [];
+            $duplicates = [];
+            $skippedDeleted = [];
+
+            foreach ($request->data as $index => $item) {
+                $tagihanBulan = isset($item['tagihan_bulan']) && $item['tagihan_bulan']
+                    ? Carbon::parse($item['tagihan_bulan'])->startOfMonth()
+                    : Carbon::now()->startOfMonth();
+
+                // Validasi max hari kerja per bulan
+                $maxHariKerja = $tagihanBulan->daysInMonth;
+                if ($item['jumlah_hari_kerja'] > $maxHariKerja) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Validasi gagal pada data ke-" . ($index + 1),
+                        'errors'  => [
+                            "data.{$index}.jumlah_hari_kerja" => [
+                                "Jumlah hari kerja tidak boleh melebihi {$maxHariKerja} hari."
+                            ]
+                        ]
+                    ], 422);
+                }
+
+                // Cek karyawan soft deleted
+                $karyawan = Karyawan::withTrashed()->find($item['karyawan_id']);
+                if ($karyawan && $karyawan->trashed()) {
+                    $skippedDeleted[] = [
+                        'index'       => $index,
+                        'karyawan_id' => $item['karyawan_id'],
+                        'message'     => 'Karyawan "' . $karyawan->nama_lengkap . '" (' . $karyawan->nomor_induk . ') sudah dihapus dari sistem.',
+                    ];
+                    continue;
+                }
+
+                // Cek duplikasi
+                $existing = TagihanPerusahaan::where('karyawan_id', $item['karyawan_id'])
+                    ->whereYear('tagihan_bulan', $tagihanBulan->year)
+                    ->whereMonth('tagihan_bulan', $tagihanBulan->month)
+                    ->exists();
+
+                if ($existing) {
+                    $duplicates[] = [
+                        'index'       => $index,
+                        'karyawan_id' => $item['karyawan_id'],
+                        'message'     => 'Sudah memiliki tagihan untuk ' .
+                            $this->getBulanIndonesia($tagihanBulan->format('n')) . ' ' . $tagihanBulan->format('Y'),
+                    ];
+                    continue;
+                }
+
+                $kalkulasi = $this->hitungTagihan(
+                    jumlahPenghasilanKotor: $item['jumlah_penghasilan_kotor'],
+                    jumlahHariKerja:        $item['jumlah_hari_kerja'],
+                    gajiHarian:             $item['gaji_harian'],
+                    jlhLembur:              $item['jlh_lembur'] ?? 0,
+                    thr:                    $item['thr'] ?? 0,
+                    seragam:                $item['seragam_cs_dan_keamanan'] ?? 0,
+                    feeManajemen:           $item['fee_manajemen'] ?? 0,
+                );
+
+                $tagihan = TagihanPerusahaan::create(array_merge([
+                    'karyawan_id'              => $item['karyawan_id'],
+                    'jumlah_penghasilan_kotor' => $item['jumlah_penghasilan_kotor'],
+                    'jumlah_hari_kerja'        => $item['jumlah_hari_kerja'],
+                    'gaji_harian'              => $item['gaji_harian'],
+                    'jlh_lembur'               => $item['jlh_lembur'] ?? 0,
+                    'thr'                      => $item['thr'] ?? 0,
+                    'seragam_cs_dan_keamanan'  => $item['seragam_cs_dan_keamanan'] ?? 0,
+                    'fee_manajemen'            => $item['fee_manajemen'] ?? 0,
+                    'tagihan_bulan'            => $tagihanBulan->format('Y-m-d'),
+                    'admin_id'                 => $adminId,
+                    'updated_by'               => $adminId,
+                ], $kalkulasi));
+
+                $created[] = $tagihan->load(['karyawan', 'admin', 'updatedBy']);
+            }
+
+            DB::commit();
+
+            // Semua gagal
+            if (empty($created)) {
+                return response()->json([
+                    'success'         => false,
+                    'message'         => 'Semua data gagal dibuat',
+                    'duplicates'      => $duplicates,
+                    'skipped_deleted' => $skippedDeleted,
+                ], 409);
+            }
+
+            $additional = [
+                'success'       => true,
+                'message'       => count($created) . ' data tagihan berhasil ditambahkan',
+                'created_count' => count($created),
+                'skipped_count' => count($duplicates) + count($skippedDeleted),
+            ];
+
+            if (!empty($duplicates)) {
+                $additional['duplicates'] = $duplicates;
+            }
+            if (!empty($skippedDeleted)) {
+                $additional['skipped_deleted'] = $skippedDeleted;
+            }
+
+            return TagihanPerusahaanResource::collection(collect($created))
+                ->additional($additional)
+                ->response()
+                ->setStatusCode(201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menambahkan data tagihan',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Import multiple tagihan perusahaan.
      */
     public function import(Request $request)

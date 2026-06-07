@@ -93,6 +93,7 @@ Route::middleware('auth:sanctum')->prefix('tagihan')->name('api.tagihan.')->grou
     Route::get('/summary', [TagihanPerusahaanController::class, 'summary']);
     Route::get('/available-months', [TagihanPerusahaanController::class, 'getAvailableMonths']);
     Route::post('/copy-previous-month', [TagihanPerusahaanController::class, 'copyFromPreviousMonth']);
+    Route::post('/bulk', [TagihanPerusahaanController::class, 'bulkStore']);
     Route::post('/import', [TagihanPerusahaanController::class, 'import']);
     Route::post('/bulk-delete', [TagihanPerusahaanController::class, 'bulkDestroy']);
     // CRUD
