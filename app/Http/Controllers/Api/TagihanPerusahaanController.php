@@ -1157,14 +1157,18 @@ class TagihanPerusahaanController extends Controller
      * Hitung komponen tagihan perusahaan.
      *
      * Aturan:
-     * - BPJS Kesehatan (perusahaan) = 4%   penghasilan kotor  (0 jika hari kerja < 7)
-     * - JHT (perusahaan)            = 3.7% penghasilan kotor  (0 jika hari kerja < 7)
-     * - JP  (perusahaan)            = 2%   penghasilan kotor  (0 jika hari kerja < 7)
-     * - JKK                         = 0.24% penghasilan kotor (0 jika hari kerja < 7)
-     * - JKM                         = 0.3%  penghasilan kotor (0 jika hari kerja < 7)
+    /**
+     * Hitung komponen tagihan perusahaan.
+     *
+     * Aturan:
+     * - BPJS Kesehatan (perusahaan) = 4%    penghasilan kotor  (0 jika hari kerja < 7)
+     * - JHT (perusahaan)            = 3.7%  penghasilan kotor  (0 jika hari kerja < 7)
+     * - JP  (perusahaan)            = 2%    penghasilan kotor  (0 jika hari kerja < 7)
+     * - JKK                         = 0.24% penghasilan kotor  (0 jika hari kerja < 7)
+     * - JKM                         = 0.3%  penghasilan kotor  (0 jika hari kerja < 7)
      * - Seragam & Fee               = 0 jika hari kerja < 7
      * - Upah Diterima Pekerja       = (gaji_harian × hari_kerja) + lembur + thr
-     * - Total Tagihan               = upah_diterima_pekerja + semua iuran & fee
+     * - Total Tagihan               = upah_diterima_pekerja + semua iuran & fee perusahaan
      *
      * @return array kolom-kolom hasil kalkulasi siap di-merge ke data create/update
      */
@@ -1177,30 +1181,25 @@ class TagihanPerusahaanController extends Controller
         float $seragam,
         float $feeManajemen,
     ): array {
-        $upahDasarPekerja = ($gajiHarian * $jumlahHariKerja) + $jlhLembur + $thr;
-
         if ($jumlahHariKerja < 7) {
-            return [
-                'bpjs_kesehatan'       => 0,
-                'jkk'                  => 0,
-                'jkm'                  => 0,
-                'jht'                  => 0,
-                'jp'                   => 0,
-                'seragam_cs_dan_keamanan' => 0,
-                'fee_manajemen'        => 0,
-                'upah_diterima_pekerja' => $upahDasarPekerja,
-                'upah_total'           => $upahDasarPekerja,
-            ];
+            $bpjsKesehatan = 0;
+            $jkk           = 0;
+            $jkm           = 0;
+            $jht           = 0;
+            $jp            = 0;
+            $seragam       = 0;
+            $feeManajemen  = 0;
+        } else {
+            $bpjsKesehatan = round($jumlahPenghasilanKotor * 0.04);
+            $jht           = round($jumlahPenghasilanKotor * 0.037);
+            $jp            = round($jumlahPenghasilanKotor * 0.02);
+            $jkk           = round($jumlahPenghasilanKotor * 0.0024);
+            $jkm           = round($jumlahPenghasilanKotor * 0.003);
         }
 
-        $bpjsKesehatan = $jumlahPenghasilanKotor * 0.04;
-        $jht           = $jumlahPenghasilanKotor * 0.037;
-        $jp            = $jumlahPenghasilanKotor * 0.02;
-        $jkk           = $jumlahPenghasilanKotor * 0.0024;
-        $jkm           = $jumlahPenghasilanKotor * 0.003;
-
         $totalIuranPerusahaan = $bpjsKesehatan + $jkk + $jkm + $jht + $jp + $seragam + $feeManajemen;
-        $upahTotal            = $upahDasarPekerja + $totalIuranPerusahaan;
+        $upahDiterimaPekerja  = ($gajiHarian * $jumlahHariKerja) + $jlhLembur + $thr - $gajiHarian;
+        $upahTotal            = $upahDiterimaPekerja + $totalIuranPerusahaan + $gajiHarian; // Tambahkan gaji_harian untuk menyesuaikan total tagihan
 
         return [
             'bpjs_kesehatan'          => $bpjsKesehatan,
@@ -1210,7 +1209,7 @@ class TagihanPerusahaanController extends Controller
             'jp'                      => $jp,
             'seragam_cs_dan_keamanan' => $seragam,
             'fee_manajemen'           => $feeManajemen,
-            'upah_diterima_pekerja'   => $upahDasarPekerja,
+            'upah_diterima_pekerja'   => $upahDiterimaPekerja,
             'upah_total'              => $upahTotal,
         ];
     }
