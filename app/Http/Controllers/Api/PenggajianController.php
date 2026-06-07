@@ -364,6 +364,136 @@ class PenggajianController extends Controller
     }
 
     /**
+     * Bulk store — setiap item memiliki field lengkap seperti method store.
+     * Berbeda dengan batchStore yang pakai gajian_bulan global.
+     */
+    public function bulkStore(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'data'                                => 'required|array|min:1',
+            'data.*.karyawan_id'                  => 'required|exists:karyawans,id',
+            'data.*.jumlah_penghasilan_kotor'     => 'required|numeric|min:0',
+            'data.*.uang_thr'                     => 'nullable|numeric|min:0',
+            'data.*.jumlah_hari_kerja'            => 'required|numeric|min:0',
+            'data.*.gaji_harian'                  => 'required|numeric|min:0',
+            'data.*.jumlah_lembur'                => 'nullable|numeric|min:0',
+            'data.*.gajian_bulan'                 => 'nullable|date',
+            'data.*.status_penggajian'            => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $adminId    = $request->user()->id;
+            $created    = [];
+            $duplicates = [];
+
+            foreach ($request->data as $index => $item) {
+                $bulanGajian = isset($item['gajian_bulan']) && $item['gajian_bulan']
+                    ? Carbon::parse($item['gajian_bulan'])->startOfMonth()
+                    : Carbon::now()->startOfMonth();
+
+                // Validasi max hari kerja per bulan
+                $maxHariKerja = $bulanGajian->daysInMonth;
+                if ($item['jumlah_hari_kerja'] > $maxHariKerja) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Validasi gagal pada data ke-" . ($index + 1),
+                        'errors'  => [
+                            "data.{$index}.jumlah_hari_kerja" => [
+                                "Jumlah hari kerja tidak boleh melebihi {$maxHariKerja} hari."
+                            ]
+                        ]
+                    ], 422);
+                }
+
+                // Cek duplikasi
+                $existing = Penggajian::where('karyawan_id', $item['karyawan_id'])
+                    ->whereYear('gajian_bulan', $bulanGajian->year)
+                    ->whereMonth('gajian_bulan', $bulanGajian->month)
+                    ->exists();
+
+                if ($existing) {
+                    $duplicates[] = [
+                        'index'       => $index,
+                        'karyawan_id' => $item['karyawan_id'],
+                        'message'     => 'Sudah memiliki penggajian untuk ' . $bulanGajian->translatedFormat('F Y'),
+                    ];
+                    continue;
+                }
+
+                $kalkulasi = $this->hitungPenggajian(
+                    jumlahPenghasilanKotor: $item['jumlah_penghasilan_kotor'],
+                    jumlahHariKerja:        $item['jumlah_hari_kerja'],
+                    gajiHarian:             $item['gaji_harian'],
+                    jumlahLembur:           $item['jumlah_lembur'] ?? 0,
+                    uangThr:                $item['uang_thr'] ?? 0,
+                );
+
+                $penggajian = Penggajian::create([
+                    'karyawan_id'              => $item['karyawan_id'],
+                    'admin_id'                 => $adminId,
+                    'updated_by'               => $adminId,
+                    'jumlah_penghasilan_kotor' => $item['jumlah_penghasilan_kotor'],
+                    'uang_thr'                 => $item['uang_thr'] ?? 0,
+                    'jumlah_hari_kerja'        => $item['jumlah_hari_kerja'],
+                    'gaji_harian'              => $item['gaji_harian'],
+                    'jumlah_lembur'            => $item['jumlah_lembur'] ?? 0,
+                    'gajian_bulan'             => $bulanGajian,
+                    'status_penggajian'        => $item['status_penggajian'] ?? false,
+                    ...$kalkulasi,
+                ]);
+
+                $created[] = $penggajian->load(['karyawan', 'admin', 'updatedBy']);
+            }
+
+            DB::commit();
+
+            // Jika semua duplikat
+            if (empty($created)) {
+                return response()->json([
+                    'success'    => false,
+                    'message'    => 'Semua data gagal dibuat karena sudah ada penggajian di bulan tersebut',
+                    'duplicates' => $duplicates,
+                ], 409);
+            }
+
+            $response = PenggajianResource::collection(collect($created))
+                ->additional([
+                    'success'       => true,
+                    'message'       => count($created) . ' data penggajian berhasil ditambahkan',
+                    'created_count' => count($created),
+                    'skipped_count' => count($duplicates),
+                ]);
+
+            if (!empty($duplicates)) {
+                $response->additional(array_merge($response->additional ?? [], [
+                    'duplicates' => $duplicates,
+                ]));
+            }
+
+            return $response->response()->setStatusCode(201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menambahkan data penggajian',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Batch create penggajian untuk multiple karyawan.
      */
     public function batchStore(Request $request)

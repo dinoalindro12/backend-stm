@@ -112,6 +112,7 @@ Route::middleware('auth:sanctum')->prefix('penggajian')->name('api.penggajian.')
     Route::get('/excel', [ExportPenggajianController::class, 'exportExcel']);
     Route::get('/test-data', [ExportPenggajianController::class, 'testData']);
     Route::post('/batch', [PenggajianController::class, 'batchStore']);
+    Route::post('/bulk', [PenggajianController::class, 'bulkStore']);
     Route::get('/summary/statistik', [PenggajianController::class, 'summary']);
     Route::get('/available-months-list', [PenggajianController::class, 'getAvailableMonths']);
     Route::post('/preview-copy', [PenggajianController::class, 'previewCopy']);
