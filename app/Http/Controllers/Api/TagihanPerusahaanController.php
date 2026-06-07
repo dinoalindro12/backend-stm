@@ -1199,7 +1199,7 @@ class TagihanPerusahaanController extends Controller
 
         $totalIuranPerusahaan = $bpjsKesehatan + $jkk + $jkm + $jht + $jp + $seragam + $feeManajemen;
         $upahDiterimaPekerja  = ($gajiHarian * $jumlahHariKerja) + $jlhLembur + $thr - $gajiHarian;
-        $upahTotal            = $upahDiterimaPekerja + $totalIuranPerusahaan + $gajiHarian; // Tambahkan gaji_harian untuk menyesuaikan total tagihan
+        $upahTotal            = round($upahDiterimaPekerja + $totalIuranPerusahaan + $gajiHarian); // Tambahkan gaji_harian untuk menyesuaikan total tagihan
 
         return [
             'bpjs_kesehatan'          => $bpjsKesehatan,
