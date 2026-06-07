@@ -114,7 +114,7 @@ class PenggajianExport implements
                 }
 
                 $sheet->getStyle("A{$headerRow}:O{$headerRow}")->applyFromArray([
-                    'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 11, 'name' => 'Arial'],
+                    'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 9, 'name' => 'Arial'],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER, 'wrapText' => true],
                     'borders'   => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '000000']]],
@@ -123,9 +123,9 @@ class PenggajianExport implements
 
                 // ── Lebar kolom ────────────────────────────────────────────
                 $widths = [
-                    'A' => 6,  'B' => 18, 'C' => 20, 'D' => 25, 'E' => 15,
-                    'F' => 22, 'G' => 18, 'H' => 15, 'I' => 15, 'J' => 15,
-                    'K' => 18, 'L' => 15, 'M' => 20, 'N' => 22, 'O' => 22,
+                    'A' => 5,  'B' => 16, 'C' => 18, 'D' => 20, 'E' => 13,
+                    'F' => 18, 'G' => 14, 'H' => 12, 'I' => 12, 'J' => 12,
+                    'K' => 8,  'L' => 14, 'M' => 16, 'N' => 18, 'O' => 18,
                 ];
                 foreach ($widths as $c => $w) {
                     $sheet->getColumnDimension($c)->setWidth($w);
@@ -166,6 +166,7 @@ class PenggajianExport implements
 
                     // Border & zebra striping
                     $sheet->getStyle("A{$startData}:O{$endData}")->applyFromArray([
+                        'font'      => ['size' => 9, 'name' => 'Arial'],
                         'borders'   => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CCCCCC']]],
                         'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
                     ]);
@@ -217,16 +218,30 @@ class PenggajianExport implements
                 }
 
                 // ── Page setup ─────────────────────────────────────────────
+                $lastRow = $this->totalData > 0 ? ($startData + $this->totalData + 3) : $startData + 3;
+                $sheet->getPageSetup()->setPrintArea("A1:O{$lastRow}");
                 $sheet->getPageSetup()
                     ->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE)
                     ->setPaperSize(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_A4)
                     ->setHorizontalCentered(true)
-                    ->setFitToWidth(1)
-                    ->setFitToHeight(0);
+                    ->setFitToPage(false);
 
-                $sheet->getPageMargins()->setTop(0.5)->setRight(0.5)->setLeft(0.5)->setBottom(0.5);
+                $sheet->getPageSetup()->setScale(55);
+                $sheet->getPageMargins()->setTop(0.3)->setRight(0.2)->setLeft(0.2)->setBottom(0.3);
                 $sheet->getHeaderFooter()
                     ->setOddFooter('&L&D &T&C&"Arial"Page &P of &N&R');
+
+                // ── Page breaks (setiap 40 data) ──────────────────────────
+                if ($this->totalData > 40) {
+                    $rowsPerPage = 40;
+                    for ($i = $rowsPerPage; $i < $this->totalData; $i += $rowsPerPage) {
+                        $breakRow = $startData + $i - 1;
+                        $sheet->setBreak(
+                            "A{$breakRow}",
+                            \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::BREAK_ROW
+                        );
+                    }
+                }
             },
         ];
     }

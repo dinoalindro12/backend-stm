@@ -63,11 +63,33 @@ class KaryawanExport implements
     }
 
     /**
-     * Return collection of data
+     * Return collection of data — kembalikan array kosong karena
+     * penulisan data dilakukan manual di registerEvents.
      */
     public function collection()
     {
-        return $this->data;
+        return collect([]);
+    }
+
+    /**
+     * Header kolom tabel
+     */
+    public function headings(): array
+    {
+        return [[
+            'No',
+            'Nomor Induk',
+            'NIK',
+            'No. Rekening BRI',
+            'Nama Lengkap',
+            'Posisi',
+            'Email',
+            'No. WhatsApp',
+            'Alamat',
+            'Tanggal Masuk',
+            'Tanggal Keluar',
+            'Status',
+        ]];
     }
 
     /**
@@ -180,7 +202,7 @@ class KaryawanExport implements
             'font' => [
                 'bold' => true,
                 'color' => ['rgb' => 'FFFFFF'],
-                'size' => 11,
+                'size' => 9,
                 'name' => 'Arial'
             ],
             'fill' => [
@@ -202,11 +224,6 @@ class KaryawanExport implements
 
         $sheet->getRowDimension($headerRow)->setRowHeight(30);
 
-        // Auto size semua kolom
-        foreach (range('A', 'L') as $column) {
-            $sheet->getColumnDimension($column)->setAutoSize(true);
-        }
-
         return [];
     }
 
@@ -216,18 +233,18 @@ class KaryawanExport implements
     public function columnWidths(): array
     {
         return [
-            'A' => 6,       // No
-            'B' => 15,      // Nomor Induk
-            'C' => 20,      // NIK
-            'D' => 20,      // No Rek BRI
-            'E' => 25,      // Nama Lengkap
-            'F' => 15,      // Posisi
-            'G' => 25,      // Email
-            'H' => 18,      // No. WhatsApp
-            'I' => 35,      // Alamat
-            'J' => 15,      // Tanggal Masuk
-            'K' => 15,      // Tanggal Keluar
-            'L' => 12,      // Status
+            'A' => 5,       // No
+            'B' => 13,      // Nomor Induk
+            'C' => 18,      // NIK
+            'D' => 18,      // No Rek BRI
+            'E' => 22,      // Nama Lengkap
+            'F' => 12,      // Posisi
+            'G' => 22,      // Email
+            'H' => 14,      // No. WhatsApp
+            'I' => 28,      // Alamat
+            'J' => 13,      // Tanggal Masuk
+            'K' => 13,      // Tanggal Keluar
+            'L' => 10,      // Status
         ];
     }
 
@@ -323,8 +340,22 @@ class KaryawanExport implements
 
                     $endDataRow = $row - 1;
 
+                    // ========== PAGE BREAKS (setiap 40 data) ==========
+                    $rowsPerPage = 40;
+                    for ($i = $rowsPerPage; $i < $this->totalData; $i += $rowsPerPage) {
+                        $breakRow = $startDataRow + $i - 1;
+                        $sheet->setBreak(
+                            "A{$breakRow}",
+                            \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::BREAK_ROW
+                        );
+                    }
+
                     // ========== APPLY STYLES TO DATA ==========
                     $sheet->getStyle("A{$startDataRow}:L{$endDataRow}")->applyFromArray([
+                        'font' => [
+                            'size' => 9,
+                            'name' => 'Arial',
+                        ],
                         'borders' => [
                             'allBorders' => [
                                 'borderStyle' => Border::BORDER_THIN,
@@ -385,7 +416,7 @@ class KaryawanExport implements
                     $sheet->setCellValue("A{$summaryRow}", 'JUMLAH KARYAWAN:');
                     $sheet->setCellValue("B{$summaryRow}", $this->totalData);
                     $sheet->getStyle("A{$summaryRow}:B{$summaryRow}")->applyFromArray([
-                        'font' => ['bold' => true, 'size' => 11],
+                        'font' => ['bold' => true, 'size' => 9],
                         'fill' => [
                             'fillType' => Fill::FILL_SOLID,
                             'startColor' => ['rgb' => 'E2EFDA']
@@ -399,19 +430,16 @@ class KaryawanExport implements
                     ]);
 
                     // Status Summary
-                    $activeCount = $this->data->where('status_aktif', true)->count();
+                    $activeCount   = $this->data->where('status_aktif', true)->count();
                     $inactiveCount = $this->totalData - $activeCount;
-                    
+
                     $sheet->setCellValue("D{$summaryRow}", 'AKTIF:');
                     $sheet->setCellValue("E{$summaryRow}", $activeCount);
-                    $sheet->setCellValue("G{$summaryRow}", 'TIDAK AKTIF:');
-                    $sheet->setCellValue("H{$summaryRow}", $inactiveCount);
-                    
-                    $sheet->mergeCells("D{$summaryRow}:E{$summaryRow}");
-                    $sheet->mergeCells("G{$summaryRow}:H{$summaryRow}");
-                    
-                    $sheet->getStyle("D{$summaryRow}:H{$summaryRow}")->applyFromArray([
-                        'font' => ['bold' => true, 'size' => 11],
+                    $sheet->setCellValue("F{$summaryRow}", 'TIDAK AKTIF:');
+                    $sheet->setCellValue("G{$summaryRow}", $inactiveCount);
+
+                    $sheet->getStyle("D{$summaryRow}:G{$summaryRow}")->applyFromArray([
+                        'font' => ['bold' => true, 'size' => 9],
                         'fill' => [
                             'fillType' => Fill::FILL_SOLID,
                             'startColor' => ['rgb' => 'FFF2CC']
@@ -468,19 +496,22 @@ class KaryawanExport implements
                     ]);
                 }
 
-                // ========== PAGE SETUP ==========
-                $sheet->getPageSetup()->setPrintArea('A1:L100');
+        // ========== PAGE SETUP ==========
+                $lastRow = $this->totalData > 0 ? ($startDataRow + $this->totalData + 5) : $startDataRow + 5;
+                $sheet->getPageSetup()->setPrintArea("A1:L{$lastRow}");
                 $sheet->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE);
                 $sheet->getPageSetup()->setPaperSize(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_A4);
-                $sheet->getPageMargins()->setTop(0.5);
-                $sheet->getPageMargins()->setRight(0.5);
-                $sheet->getPageMargins()->setLeft(0.5);
-                $sheet->getPageMargins()->setBottom(0.5);
+                $sheet->getPageMargins()->setTop(0.3);
+                $sheet->getPageMargins()->setRight(0.2);
+                $sheet->getPageMargins()->setLeft(0.2);
+                $sheet->getPageMargins()->setBottom(0.3);
+                $sheet->getPageMargins()->setHeader(0.1);
+                $sheet->getPageMargins()->setFooter(0.1);
                 $sheet->getPageSetup()->setHorizontalCentered(true);
-                $sheet->getPageSetup()->setFitToWidth(1);
-                $sheet->getPageSetup()->setFitToHeight(0);
-                $sheet->getHeaderFooter()
-                    ->setOddHeader('&C&"Arial,Bold"PT SURYA TAMADO MANDIRI');
+                // Scale 65% agar semua kolom muat dalam lebar A4 landscape
+                // JANGAN setFitToPage(true) karena akan mengabaikan manual page break
+                $sheet->getPageSetup()->setFitToPage(false);
+                $sheet->getPageSetup()->setScale(65);
                 $sheet->getHeaderFooter()
                     ->setOddFooter('&L&D &T&C&"Arial"Page &P of &N&R');
 
