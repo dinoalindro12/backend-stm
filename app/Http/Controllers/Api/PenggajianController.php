@@ -38,6 +38,13 @@ class PenggajianController extends Controller
             $query->whereYear('gajian_bulan', $request->tahun);
         }
 
+        // Filter berdasarkan gajian_bulan sebagai date (misal: 2026-06-01)
+        if ($request->filled('gajian_bulan')) {
+            $bulan = Carbon::parse($request->gajian_bulan);
+            $query->whereYear('gajian_bulan', $bulan->year)
+                  ->whereMonth('gajian_bulan', $bulan->month);
+        }
+
         // Filter sudah/belum cetak
         if ($request->has('cetak_status')) {
             if ($request->cetak_status === 'sudah') {

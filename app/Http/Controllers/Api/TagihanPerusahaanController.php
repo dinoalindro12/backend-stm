@@ -29,6 +29,13 @@ class TagihanPerusahaanController extends Controller
             } elseif ($request->has('tahun')) {
                 $query->tahunTagihan($request->tahun);
             }
+
+            // Filter berdasarkan tagihan_bulan sebagai date (misal: 2026-06-01)
+            if ($request->filled('tagihan_bulan')) {
+                $bulan = Carbon::parse($request->tagihan_bulan);
+                $query->whereYear('tagihan_bulan', $bulan->year)
+                      ->whereMonth('tagihan_bulan', $bulan->month);
+            }
             
             //  FILTER BERDASARKAN RANGE TANGGAL (jika diperlukan)
             if ($request->has('tanggal_awal') && $request->has('tanggal_akhir')) {
