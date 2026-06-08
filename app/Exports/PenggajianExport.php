@@ -144,7 +144,7 @@ class PenggajianExport implements
                         $sheet->setCellValue("D{$row}", optional($k)->nama_lengkap ?? '-');
                         $sheet->setCellValue("E{$row}", $this->getPosisiLabel(optional($k)->posisi));
                         $sheet->setCellValue("F{$row}", $penggajian->jumlah_penghasilan_kotor ?? 0);
-                        // Ambil BPJS langsung dari DB agar konsisten dengan hitungan controller
+                        // Ambil BPJS langsung dari DB — konsisten dengan hitungan controller
                         $sheet->setCellValue("G{$row}", $penggajian->bpjs_kesehatan ?? 0);
                         $sheet->setCellValue("H{$row}", $penggajian->bpjs_jht ?? 0);
                         $sheet->setCellValue("I{$row}", $penggajian->bpjs_jp ?? 0);
@@ -152,9 +152,10 @@ class PenggajianExport implements
                         $sheet->setCellValue("K{$row}", $penggajian->jumlah_hari_kerja ?? 0);
                         $sheet->setCellValue("L{$row}", $penggajian->gaji_harian ?? 0);
                         $sheet->setCellValue("M{$row}", $penggajian->jumlah_lembur ?? 0);
-                        // Ambil upah kotor dan upah diterima langsung dari DB
-                        $sheet->setCellValue("N{$row}", $penggajian->upah_kotor_karyawan ?? 0);
-                        $sheet->setCellValue("O{$row}", $penggajian->upah_diterima ?? 0);
+                        // N: Upah Kotor = (Gaji Harian × Hari Kerja) + Lembur + THR
+                        $sheet->setCellValue("N{$row}", "=(L{$row}*K{$row})+M{$row}+J{$row}");
+                        // O: Upah Diterima = Upah Kotor - Total BPJS (G+H+I)
+                        $sheet->setCellValue("O{$row}", "=N{$row}-(G{$row}+H{$row}+I{$row})");
 
                         $row++;
                     }
