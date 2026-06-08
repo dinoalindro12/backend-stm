@@ -982,7 +982,7 @@ class PenggajianController extends Controller
                     'tanggal_cetak'            => null,
                     ...$this->hitungPenggajian(
                         jumlahPenghasilanKotor: $referensi->jumlah_penghasilan_kotor,
-                        jumlahHariKerja:        0,
+                        jumlahHariKerja:        $referensi->jumlah_hari_kerja, // pakai referensi agar BPJS tidak 0
                         gajiHarian:             $referensi->gaji_harian,
                         jumlahLembur:           0,
                         uangThr:                $adjustThr ? 0 : $referensi->uang_thr,

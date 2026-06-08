@@ -966,7 +966,7 @@ class TagihanPerusahaanController extends Controller
                 // Biarkan model menghitung field otomatis
                 $tagihanBaru = TagihanPerusahaan::create(array_merge($dataBaru, $this->hitungTagihan(
                     jumlahPenghasilanKotor: $dataBaru['jumlah_penghasilan_kotor'],
-                    jumlahHariKerja:        $dataBaru['jumlah_hari_kerja'],
+                    jumlahHariKerja:        $referensi->jumlah_hari_kerja, // pakai referensi agar BPJS tidak 0
                     gajiHarian:             $dataBaru['gaji_harian'],
                     jlhLembur:              $dataBaru['jlh_lembur'],
                     thr:                    $dataBaru['thr'],
@@ -1198,7 +1198,7 @@ class TagihanPerusahaanController extends Controller
         }
 
         $totalIuranPerusahaan = $bpjsKesehatan + $jkk + $jkm + $jht + $jp + $seragam + $feeManajemen;
-        $upahDiterimaPekerja  = ($gajiHarian * $jumlahHariKerja) + $jlhLembur + $thr - $gajiHarian;
+        $upahDiterimaPekerja  = round(($gajiHarian * $jumlahHariKerja) + $jlhLembur + $thr - $gajiHarian);
         $upahTotal            = round($upahDiterimaPekerja + $totalIuranPerusahaan + $gajiHarian); // Tambahkan gaji_harian untuk menyesuaikan total tagihan
 
         return [
