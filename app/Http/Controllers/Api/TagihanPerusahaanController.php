@@ -943,13 +943,13 @@ class TagihanPerusahaanController extends Controller
 
                 // Siapkan data baru
                 $dataBaru = [
-                    'karyawan_id' => $referensi->karyawan_id,
+                    'karyawan_id'              => $referensi->karyawan_id,
                     'jumlah_penghasilan_kotor' => $referensi->jumlah_penghasilan_kotor,
-                    'jumlah_hari_kerja' => 0,
-                    'gaji_harian' => $referensi->gaji_harian,
-                    'tagihan_bulan' => $bulanTujuan->format('Y-m-d'),
-                    'admin_id' => $request->user()->id,
-                    'updated_by' => $request->user()->id,
+                    'jumlah_hari_kerja'        => 0,
+                    'gaji_harian'              => $referensi->gaji_harian,
+                    'tagihan_bulan'            => $bulanTujuan->format('Y-m-d'),
+                    'admin_id'                 => $request->user()->id,
+                    'updated_by'               => $request->user()->id,
                 ];
 
                 // Handle jlh_lembur dan THR
@@ -961,25 +961,30 @@ class TagihanPerusahaanController extends Controller
                     $dataBaru['thr'] = $referensi->thr ?? 0;
                 }
 
-                // Handle seragam dan fee manajemen
-                if ($resetSeragamFee) {
-                    $dataBaru['seragam_cs_dan_keamanan'] = 0;
-                    $dataBaru['fee_manajemen'] = 0;
-                } else {
-                    $dataBaru['seragam_cs_dan_keamanan'] = $referensi->seragam_cs_dan_keamanan ?? 0;
-                    $dataBaru['fee_manajemen'] = $referensi->fee_manajemen ?? 0;
-                }
+                // Seragam & fee manajemen — selalu dari referensi
+                $dataBaru['seragam_cs_dan_keamanan'] = $referensi->seragam_cs_dan_keamanan ?? 0;
+                $dataBaru['fee_manajemen']           = $referensi->fee_manajemen ?? 0;
 
-                // Biarkan model menghitung field otomatis
-                $tagihanBaru = TagihanPerusahaan::create(array_merge($dataBaru, $this->hitungTagihan(
-                    jumlahPenghasilanKotor: $dataBaru['jumlah_penghasilan_kotor'],
-                    jumlahHariKerja:        $referensi->jumlah_hari_kerja, // pakai referensi agar BPJS tidak 0
-                    gajiHarian:             $dataBaru['gaji_harian'],
-                    jlhLembur:              $dataBaru['jlh_lembur'],
-                    thr:                    $dataBaru['thr'],
-                    seragam:                $dataBaru['seragam_cs_dan_keamanan'],
-                    feeManajemen:           $dataBaru['fee_manajemen'],
-                )));
+                // BPJS langsung dari referensi — tidak dihitung ulang
+                $upahDiterima = ($dataBaru['gaji_harian'] * 0) + $dataBaru['jlh_lembur'] + $dataBaru['thr'];
+                $upahTotal    = $upahDiterima
+                    + ($referensi->bpjs_kesehatan ?? 0)
+                    + ($referensi->jkk ?? 0)
+                    + ($referensi->jkm ?? 0)
+                    + ($referensi->jht ?? 0)
+                    + ($referensi->jp ?? 0)
+                    + $dataBaru['seragam_cs_dan_keamanan']
+                    + $dataBaru['fee_manajemen'];
+
+                $tagihanBaru = TagihanPerusahaan::create(array_merge($dataBaru, [
+                    'bpjs_kesehatan'          => $referensi->bpjs_kesehatan ?? 0,
+                    'jkk'                     => $referensi->jkk ?? 0,
+                    'jkm'                     => $referensi->jkm ?? 0,
+                    'jht'                     => $referensi->jht ?? 0,
+                    'jp'                      => $referensi->jp ?? 0,
+                    'upah_diterima_pekerja'   => $upahDiterima,
+                    'upah_total'              => $upahTotal,
+                ]));
                 $created[] = $tagihanBaru->load(['karyawan', 'admin', 'updatedBy']);
             }
 

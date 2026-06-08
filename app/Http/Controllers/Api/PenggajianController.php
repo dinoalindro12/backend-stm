@@ -975,25 +975,29 @@ class PenggajianController extends Controller
                     continue;
                 }
 
+                $uangThr   = $adjustThr ? 0 : $referensi->uang_thr;
+                $upahKotor = (0 * $referensi->gaji_harian) + 0 + $uangThr; // hari=0, lembur=0
+
                 $dataBaru = [
                     'karyawan_id'              => $referensi->karyawan_id,
                     'admin_id'                 => $adminId,
                     'updated_by'               => $adminId,
                     'jumlah_penghasilan_kotor' => $referensi->jumlah_penghasilan_kotor,
-                    'uang_thr'                 => $adjustThr ? 0 : $referensi->uang_thr,
+                    'uang_thr'                 => $uangThr,
                     'jumlah_hari_kerja'        => 0,
                     'gaji_harian'              => $referensi->gaji_harian,
                     'jumlah_lembur'            => 0,
                     'gajian_bulan'             => $bulanBaru,
                     'status_penggajian'        => false,
                     'tanggal_cetak'            => null,
-                    ...$this->hitungPenggajian(
-                        jumlahPenghasilanKotor: $referensi->jumlah_penghasilan_kotor,
-                        jumlahHariKerja:        $referensi->jumlah_hari_kerja, // pakai referensi agar BPJS tidak 0
-                        gajiHarian:             $referensi->gaji_harian,
-                        jumlahLembur:           0,
-                        uangThr:                $adjustThr ? 0 : $referensi->uang_thr,
-                    ),
+                    // BPJS langsung dari referensi
+                    'bpjs_kesehatan'           => $referensi->bpjs_kesehatan,
+                    'bpjs_jht'                 => $referensi->bpjs_jht,
+                    'bpjs_jp'                  => $referensi->bpjs_jp,
+                    'total_bpjs'               => $referensi->total_bpjs,
+                    // Upah dihitung dengan hari kerja = 0
+                    'upah_kotor_karyawan'      => $upahKotor,
+                    'upah_diterima'            => $upahKotor - $referensi->total_bpjs,
                 ];
 
                 $penggajianBaru = Penggajian::create($dataBaru);
