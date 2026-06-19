@@ -1020,25 +1020,30 @@ class PenggajianController extends Controller
      * @return array kolom-kolom hasil kalkulasi siap di-merge ke data create/update
      */
     private function hitungPenggajian(
-        float $jumlahPenghasilanKotor,
-        float $jumlahHariKerja,
-        float $gajiHarian,
-        float $jumlahLembur,
-        float $uangThr,
+    float $jumlahPenghasilanKotor,
+    float $jumlahHariKerja,
+    float $gajiHarian,
+    float $jumlahLembur,
+    float $uangThr,
     ): array {
         if ($jumlahHariKerja < 7) {
-            $bpjsKesehatan = 0;
-            $bpjsJht       = 0;
-            $bpjsJp        = 0;
             $upahKotorKaryawan = $jumlahHariKerja * $gajiHarian;
-            $upahDiterima      = $upahKotorKaryawan;
-        } else {
-            $bpjsKesehatan = round($jumlahPenghasilanKotor * 0.01);
-            $bpjsJht       = round($jumlahPenghasilanKotor * 0.02);
-            $bpjsJp        = round($jumlahPenghasilanKotor * 0.01);
+
+            return [
+                'bpjs_kesehatan'      => 0,
+                'bpjs_jht'            => 0,
+                'bpjs_jp'             => 0,
+                'total_bpjs'          => 0,
+                'upah_kotor_karyawan' => $upahKotorKaryawan,
+                'upah_diterima'       => $upahKotorKaryawan,
+            ];
         }
 
-        $totalBpjs        = $bpjsKesehatan + $bpjsJht + $bpjsJp;
+        $bpjsKesehatan = $jumlahPenghasilanKotor * 0.01;
+        $bpjsJht       = $jumlahPenghasilanKotor * 0.02;
+        $bpjsJp        = $jumlahPenghasilanKotor * 0.01;
+
+        $totalBpjs         = $bpjsKesehatan + $bpjsJht + $bpjsJp;
         $upahKotorKaryawan = ($gajiHarian * $jumlahHariKerja) + $jumlahLembur + $uangThr;
         $upahDiterima      = $upahKotorKaryawan - $totalBpjs;
 
