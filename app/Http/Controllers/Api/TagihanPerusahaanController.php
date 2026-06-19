@@ -982,7 +982,7 @@ class TagihanPerusahaanController extends Controller
                 $dataBaru['fee_manajemen']           = $referensi->fee_manajemen ?? 0;
 
                 // BPJS langsung dari referensi — tidak dihitung ulang
-                $upahDiterima = ($dataBaru['gaji_harian'] * 0) + $dataBaru['jlh_lembur'] + $dataBaru['thr'];
+                $upahDiterima = ($dataBaru['gaji_harian'] * $dataBaru['jumlah_hari_kerja']) + $dataBaru['jlh_lembur'] + $dataBaru['thr'];
                 $upahTotal    = $upahDiterima
                     + ($referensi->bpjs_kesehatan ?? 0)
                     + ($referensi->jkk ?? 0)
