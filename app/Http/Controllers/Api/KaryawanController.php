@@ -214,7 +214,7 @@ class KaryawanController extends Controller
                 'posisi'        => 'sometimes|required|string|in:jasa,supir,keamanan,cleaning_service,operator',
                 'email'         => 'nullable|email|unique:karyawans,email,' . $karyawan->id . '|max:100',
                 'alamat'        => 'sometimes|required|string',
-                'no_wa'         => 'sometimes|string|regex:/^[0-9]+$/|max:15',
+                'no_wa'         => 'sometimes|unique:karyawans,no_wa,' . $karyawan->id . '|string|regex:/^[0-9]+$/|max:15',
                 'image'         => 'nullable|image|mimes:jpeg,png,jp,svg,webp|max:5120',
                 'tanggal_masuk' => 'sometimes|required|date',
                 'tanggal_keluar'=> 'nullable|date|after_or_equal:tanggal_masuk',
@@ -377,46 +377,46 @@ class KaryawanController extends Controller
     /**
      * Restore soft deleted karyawan
      */
-    public function restore($id)
-    {
-        DB::beginTransaction();
+    // public function restore($id)
+    // {
+    //     DB::beginTransaction();
         
-        try {
-            $karyawan = Karyawan::withTrashed()->find($id);
+    //     try {
+    //         $karyawan = Karyawan::withTrashed()->find($id);
             
-            if (!$karyawan) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Data karyawan tidak ditemukan'
-                ], 404);
-            }
+    //         if (!$karyawan) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Data karyawan tidak ditemukan'
+    //             ], 404);
+    //         }
             
-            if (!$karyawan->trashed()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Data karyawan tidak dalam status terhapus'
-                ], 400);
-            }
+    //         if (!$karyawan->trashed()) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Data karyawan tidak dalam status terhapus'
+    //             ], 400);
+    //         }
             
-            $karyawan->restore();
+    //         $karyawan->restore();
 
-            DB::commit();
+    //         DB::commit();
 
-            return (new KaryawanResource($karyawan->load(['admin', 'updatedBy'])))->additional([
-                'success' => true,
-                'message' => 'Data karyawan berhasil dipulihkan'
-            ]);
+    //         return (new KaryawanResource($karyawan->load(['admin', 'updatedBy'])))->additional([
+    //             'success' => true,
+    //             'message' => 'Data karyawan berhasil dipulihkan'
+    //         ]);
             
-        } catch (\Exception $e) {
-            DB::rollBack();
+    //     } catch (\Exception $e) {
+    //         DB::rollBack();
             
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal memulihkan data',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
-            ], 500);
-        }
-    }
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Gagal memulihkan data',
+    //             'error' => env('APP_DEBUG') ? $e->getMessage() : null
+    //         ], 500);
+    //     }
+    // }
 
     /**
      * Get statistics summary
