@@ -14,7 +14,7 @@ use Carbon\Carbon;
 class TagihanPerusahaanController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * bagian ini berfungsi untuk menampilkan daftar tagihan perusahaan.
      */
     public function index(Request $request)
     {
@@ -34,7 +34,7 @@ class TagihanPerusahaanController extends Controller
             if ($request->filled('tagihan_bulan')) {
                 $bulan = Carbon::parse($request->tagihan_bulan);
                 $query->whereYear('tagihan_bulan', $bulan->year)
-                      ->whereMonth('tagihan_bulan', $bulan->month);
+                    ->whereMonth('tagihan_bulan', $bulan->month);
             }
             
             //  FILTER BERDASARKAN RANGE TANGGAL (jika diperlukan)
@@ -90,7 +90,7 @@ class TagihanPerusahaanController extends Controller
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Bagian ini berfungsi untuk menambahkan tagihan perusahaan baru.
      */
     public function store(Request $request)
     {
@@ -98,7 +98,7 @@ class TagihanPerusahaanController extends Controller
         $maxHariKerja = $request->filled('tagihan_bulan')
             ? Carbon::parse($request->tagihan_bulan)->daysInMonth
             : Carbon::now()->daysInMonth;
-
+        // setelah dapat max hari kerja, kita buat validasi dengan rule max:{$maxHariKerja} dan menjalankan validasi seperti biasa
         $validator = Validator::make($request->all(), [
             'karyawan_id' => 'required|exists:karyawans,id',
             'jumlah_penghasilan_kotor' => 'required|numeric|min:0',
@@ -110,7 +110,22 @@ class TagihanPerusahaanController extends Controller
             'fee_manajemen' => 'nullable|numeric|min:0',
             'tagihan_bulan' => 'nullable|date',
         ], [
+            // Pesan error khusus untuk validasi jumlah_hari_kerja agar lebih informatif
             'jumlah_hari_kerja.max' => "Jumlah hari kerja tidak boleh melebihi {$maxHariKerja} hari (jumlah hari dalam bulan tersebut).",
+            // 'tagihan_bulan.date' => "Format tanggal tagihan bulan tidak valid.",
+            // 'karyawan_id.exists' => "Karyawan dengan ID yang diberikan tidak ditemukan.",
+            // 'jumlah_penghasilan_kotor.numeric' => "Jumlah penghasilan kotor harus berupa angka.",
+            // 'jumlah_penghasilan_kotor.min' => "Jumlah penghasilan kotor tidak boleh negatif.",
+            // 'gaji_harian.numeric' => "Gaji harian harus berupa angka.",
+            // 'gaji_harian.min' => "Gaji harian tidak boleh negatif.",
+            // 'jlh_lembur.numeric' => "Jumlah lembur harus berupa angka.",
+            // 'jlh_lembur.min' => "Jumlah lembur tidak boleh negatif.",
+            // 'thr.numeric' => "Uang THR harus berupa angka.",
+            // 'thr.min' => "Uang THR tidak boleh negatif.",
+            // 'seragam_cs_dan_keamanan.numeric' => "Biaya seragam CS dan keamanan harus berupa angka.",
+            // 'seragam_cs_dan_keamanan.min' => "Biaya seragam CS dan keamanan tidak boleh negatif.",
+            // 'fee_manajemen.numeric' => "Fee manajemen harus berupa angka.",
+            // 'fee_manajemen.min' => "Fee manajemen tidak boleh negatif.",
         ]);
 
         if ($validator->fails()) {
@@ -124,7 +139,7 @@ class TagihanPerusahaanController extends Controller
         try {
             DB::beginTransaction();
 
-            // ✅ Cek apakah karyawan sudah dihapus (soft delete)
+            // ✅ Cek apakah karyawan sudah dihapus (soft delete) dengan withTrashed
             $karyawan = Karyawan::withTrashed()->find($request->karyawan_id);
             if ($karyawan && $karyawan->trashed()) {
                 DB::rollBack();
@@ -154,7 +169,7 @@ class TagihanPerusahaanController extends Controller
                 ], 409);
             }
 
-            // ✅ HAPUS field yang dihitung otomatis oleh model
+            // ✅ HAPUS field yang dihitung otomatis oleh method hitungTagihan. 
             $data = $request->except([
                 'bpjs_kesehatan', 'jkk', 'jkm', 'jht', 'jp',
                 'upah_diterima_pekerja', 'upah_total',
@@ -241,7 +256,7 @@ class TagihanPerusahaanController extends Controller
                 $maxHariKerja = Carbon::parse($existingTagihan->tagihan_bulan)->daysInMonth;
             }
         }
-
+        // setelah dapat max hari kerja, kita buat validasi dengan rule max:{$maxHariKerja} dan menjalankan validasi seperti biasa
         $validator = Validator::make($request->all(), [
             'karyawan_id' => 'sometimes|exists:karyawans,id',
             'jumlah_penghasilan_kotor' => 'sometimes|numeric|min:0',
@@ -275,13 +290,14 @@ class TagihanPerusahaanController extends Controller
                 $tagihanBulan = $request->has('tagihan_bulan')
                     ? Carbon::parse($request->tagihan_bulan)->startOfMonth()
                     : Carbon::parse($tagihan->tagihan_bulan)->startOfMonth();
-
+                    // Jika tagihan_bulan tidak diubah, tetap gunakan bulan dari data existing untuk cek duplikasi agar tidak salah deteksi duplikasi saat update data yang sama tanpa mengubah bulan.
                 $existingTagihan = TagihanPerusahaan::where('karyawan_id', $karyawanId)
                     ->whereYear('tagihan_bulan', $tagihanBulan->year)
                     ->whereMonth('tagihan_bulan', $tagihanBulan->month)
+                    // Jika data existing yang sedang diupdate memiliki bulan yang sama dengan bulan baru, maka kita harus mengecualikan data tersebut dari pengecekan duplikasi agar tidak salah deteksi duplikasi saat update data yang sama tanpa mengubah bulan.
                     ->where('id', '!=', $id)
                     ->first();
-
+                    
                 if ($existingTagihan) {
                     DB::rollBack();
                     return response()->json([
@@ -509,10 +525,11 @@ class TagihanPerusahaanController extends Controller
     }
 
     /**
-     * Bulk store — setiap item memiliki field lengkap seperti method store.
+     * Bulk store — untuk menambahkan beberapa tagihan sekaligus.
      */
     public function bulkStore(Request $request)
     {
+        // bagian ini merupakan validasi awal untuk memastika data yang dikirim sesuai dengan format yang diharapkan 
         $validator = Validator::make($request->all(), [
             'data'                                    => 'required|array|min:1',
             'data.*.karyawan_id'                      => 'required|exists:karyawans,id',
@@ -851,7 +868,7 @@ class TagihanPerusahaanController extends Controller
     }
 
     /**
-     * Copy data dari bulan sebelumnya
+     * Metthod ini berfungsi untuk mennyalin data tagihan bulan lalu.
      */
     public function copyFromPreviousMonth(Request $request)
     {
@@ -878,7 +895,6 @@ class TagihanPerusahaanController extends Controller
             // Parse bulan
             $bulanReferensi = Carbon::parse($request->bulan_referensi)->startOfMonth();
             $bulanTujuan = Carbon::parse($request->bulan_tujuan)->startOfMonth();
-
             // Validasi bulan tujuan harus setelah bulan referensi
             if ($bulanTujuan->lte($bulanReferensi)) {
                 return response()->json([
@@ -1201,6 +1217,8 @@ class TagihanPerusahaanController extends Controller
             $jp            = 0;
             $seragam       = 0;
             $feeManajemen  = 0;
+            $upahDiterimaPekerja  = round($gajiHarian * $jumlahHariKerja);
+            $upahTotal            = $upahDiterimaPekerja; // Total tagihan hanya upah diterima pekerja
         } else {
             $bpjsKesehatan = round($jumlahPenghasilanKotor * 0.04);
             $jht           = round($jumlahPenghasilanKotor * 0.037);
