@@ -153,9 +153,9 @@ class PenggajianExport implements
                         $sheet->setCellValue("L{$row}", $penggajian->gaji_harian ?? 0);
                         $sheet->setCellValue("M{$row}", $penggajian->jumlah_lembur ?? 0);
                         // N: Upah Kotor = (Gaji Harian × Hari Kerja) + Lembur + THR
-                        $sheet->setCellValue("N{$row}", "=(L{$row}*K{$row})+M{$row}+J{$row}");
+                        $sheet->setCellValue("N{$row}", "=(K{$row}*L{$row})+M{$row}+J{$row}");
                         // O: Upah Diterima = Upah Kotor - Total BPJS (G+H+I), kecuali hari kerja < 7
-                        $sheet->setCellValue("O{$row}", "=IF(K{$row}<7,N{$row},N{$row}-(G{$row}+H{$row}+I{$row}))");
+                        $sheet->setCellValue("O{$row}", "=N{$row}-(G{$row}+H{$row}+I{$row})");
 
                         $row++;
                     }
