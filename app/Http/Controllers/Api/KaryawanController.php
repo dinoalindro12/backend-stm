@@ -90,7 +90,7 @@ class KaryawanController extends Controller
                 'posisi'        => 'required|string|in:jasa,supir,keamanan,cleaning_service,operator',
                 'email'         => 'nullable|email|unique:karyawans,email|max:100',
                 'alamat'        => 'required|string',
-                'no_wa'         => 'required|string|regex:/^[0-9]+$/|max:15',
+                'no_wa'         => 'required|string|unique:karyawans,no_wa|regex:/^[0-9]+$/|max:15',
                 'image'         => 'nullable|image|mimes:jpeg,png,jpg,svg,webp|max:5120', // 5MB
                 'tanggal_masuk' => 'required|date',
                 'tanggal_keluar'=> 'nullable|date|after_or_equal:tanggal_masuk',
