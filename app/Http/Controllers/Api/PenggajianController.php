@@ -1025,31 +1025,31 @@ class PenggajianController extends Controller
     float $gajiHarian,
     float $jumlahLembur,
     float $uangThr,
-        ): array {
-            if ($jumlahHariKerja < 7) {
-                $bpjsKesehatan = 0;
-                $bpjsJht       = 0;
-                $bpjsJp        = 0;
-                $upahKotorKaryawan = $jumlahHariKerja * $gajiHarian;
-            } else {
-                $bpjsKesehatan = $jumlahPenghasilanKotor * 0.01;
-                $bpjsJht       = $jumlahPenghasilanKotor * 0.02;
-                $bpjsJp        = $jumlahPenghasilanKotor * 0.01;
-                $upahKotorKaryawan = ($gajiHarian * $jumlahHariKerja) + $jumlahLembur + $uangThr;
-            }
+): array {
+    if ($jumlahHariKerja < 7) {
+        $bpjsKesehatan = 0;
+        $bpjsJht       = 0;
+        $bpjsJp        = 0;
+        $upahKotorKaryawan = $jumlahHariKerja * $gajiHarian;
+    } else {
+        $bpjsKesehatan = $jumlahPenghasilanKotor * 0.01;
+        $bpjsJht       = $jumlahPenghasilanKotor * 0.02;
+        $bpjsJp        = $jumlahPenghasilanKotor * 0.01;
+        $upahKotorKaryawan = ($gajiHarian * $jumlahHariKerja) + $jumlahLembur + $uangThr;
+    }
 
-            $totalBpjs    = $bpjsKesehatan + $bpjsJht + $bpjsJp;
-            $upahDiterima = $upahKotorKaryawan - $totalBpjs;
+    $totalBpjs    = $bpjsKesehatan + $bpjsJht + $bpjsJp;
+    $upahDiterima = $upahKotorKaryawan - $totalBpjs;
 
-            return [
-                'bpjs_kesehatan'      => $bpjsKesehatan,
-                'bpjs_jht'            => $bpjsJht,
-                'bpjs_jp'             => $bpjsJp,
-                'total_bpjs'          => $totalBpjs,
-                'upah_kotor_karyawan' => $upahKotorKaryawan,
-                'upah_diterima'       => $upahDiterima,
-            ];
-        }
+    return [
+        'bpjs_kesehatan'      => $bpjsKesehatan,
+        'bpjs_jht'            => $bpjsJht,
+        'bpjs_jp'             => $bpjsJp,
+        'total_bpjs'          => $totalBpjs,
+        'upah_kotor_karyawan' => $upahKotorKaryawan,
+        'upah_diterima'       => $upahDiterima,
+    ];
+}
 
     /**
      * Copy penggajian dari bulan sebelumnya
