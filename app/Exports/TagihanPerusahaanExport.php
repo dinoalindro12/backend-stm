@@ -153,6 +153,7 @@ class TagihanPerusahaanExport implements
 
                     foreach ($this->data as $index => $tagihan) {
                         $k = $tagihan->karyawan;
+                        $hariKerja = $tagihan->jumlah_hari_kerja ?? 0;
 
                         $sheet->setCellValue("A{$row}", $index + 1);
                         $sheet->setCellValue("B{$row}", optional($k)->nomor_induk ?? '-');
@@ -160,23 +161,37 @@ class TagihanPerusahaanExport implements
                         $sheet->setCellValue("D{$row}", optional($k)->nama_lengkap ?? '-');
                         $sheet->setCellValue("E{$row}", $this->getPosisiLabel(optional($k)->posisi));
 
-                        $sheet->setCellValue("F{$row}", $tagihan->bpjs_kesehatan ?? 0);
-                        $sheet->setCellValue("G{$row}", $tagihan->jkk ?? 0);
-                        $sheet->setCellValue("H{$row}", $tagihan->jkm ?? 0);
-                        $sheet->setCellValue("I{$row}", $tagihan->jht ?? 0);
-                        $sheet->setCellValue("J{$row}", $tagihan->jp ?? 0);
-                        $sheet->setCellValue("K{$row}", $tagihan->seragam_cs_dan_keamanan ?? 0);
-                        $sheet->setCellValue("L{$row}", $tagihan->fee_manajemen ?? 0);
+                        // Jika hari kerja < 7, kolom BPJS, seragam, dan fee manajemen dikosongkan
+                        if ($hariKerja < 7) {
+                            $sheet->setCellValue("F{$row}", null);
+                            $sheet->setCellValue("G{$row}", null);
+                            $sheet->setCellValue("H{$row}", null);
+                            $sheet->setCellValue("I{$row}", null);
+                            $sheet->setCellValue("J{$row}", null);
+                            $sheet->setCellValue("K{$row}", null);
+                            $sheet->setCellValue("L{$row}", null);
+                        } else {
+                            $sheet->setCellValue("F{$row}", $tagihan->bpjs_kesehatan ?? 0);
+                            $sheet->setCellValue("G{$row}", $tagihan->jkk ?? 0);
+                            $sheet->setCellValue("H{$row}", $tagihan->jkm ?? 0);
+                            $sheet->setCellValue("I{$row}", $tagihan->jht ?? 0);
+                            $sheet->setCellValue("J{$row}", $tagihan->jp ?? 0);
+                            $sheet->setCellValue("K{$row}", $tagihan->seragam_cs_dan_keamanan ?? 0);
+                            $sheet->setCellValue("L{$row}", $tagihan->fee_manajemen ?? 0);
+                        }
+
                         $sheet->setCellValue("M{$row}", $tagihan->thr ?? 0);
-                        $sheet->setCellValue("N{$row}", $tagihan->jumlah_hari_kerja ?? 0);
+                        $sheet->setCellValue("N{$row}", $hariKerja);
                         $sheet->setCellValue("O{$row}", $tagihan->gaji_harian ?? 0);
                         $sheet->setCellValue("P{$row}", $tagihan->jlh_lembur ?? 0);
-                        // Q: Upah Diterima Pekerja = (Gaji Harian × Hari Kerja) + Lembur + THR
-                        $sheet->setCellValue("Q{$row}", "=(O{$row}*N{$row})+P{$row}+M{$row}-O{$row}");
-                        // R: Total Tagihan = Upah Diterima Pekerja + semua iuran & fee perusahaan
-                        $sheet->setCellValue("R{$row}", "=Q{$row}+F{$row}+G{$row}+H{$row}+I{$row}+J{$row}+K{$row}+L{$row}+O{$row}");
+
+                        // Q: Upah Diterima Pekerja
+                        $sheet->setCellValue("Q{$row}", "=IF(N{$row}<7,O{$row}*N{$row},(O{$row}*N{$row})+P{$row}+M{$row}-O{$row})");
+                        // R: Total Tagihan
+                        $sheet->setCellValue("R{$row}", "=IF(N{$row}<7,Q{$row},Q{$row}+F{$row}+G{$row}+H{$row}+I{$row}+J{$row}+K{$row}+L{$row}+O{$row})");
 
                         $row++;
+                            
                     }
 
                     $endData = $row - 1;
