@@ -103,6 +103,14 @@ class PenggajianController extends Controller
             'gajian_bulan'             => 'nullable|date',
         ], [
             'jumlah_hari_kerja.max' => "Jumlah hari kerja tidak boleh melebihi {$maxHariKerja} hari (jumlah hari dalam bulan tersebut).",
+            // 'gajian_bulan.date' => "Format tanggal gajian tidak valid.",
+            // 'karyawan_id.exists' => "Karyawan dengan ID yang diberikan tidak ditemukan.",
+            // 'jumlah_penghasilan_kotor.numeric' => "Jumlah penghasilan kotor harus berupa angka.",
+            // 'jumlah_penghasilan_kotor.min' => "Jumlah penghasilan kotor tidak boleh negatif.",
+            // 'uang_thr.numeric' => "Uang THR harus berupa angka.",
+            // 'uang_thr.min' => "Uang THR tidak boleh negatif.",
+            // 'jumlah_lembur.numeric' => "Jumlah lembur harus berupa angka.",
+            // 'jumlah_lembur.min' => "Jumlah lembur tidak boleh negatif.",
         ]);
 
         if ($validator->fails()) {
@@ -665,6 +673,142 @@ class PenggajianController extends Controller
     }
 
     /**
+     * Kirim slip gaji ke Email (per karyawan)
+     */
+    public function sendEmail($id)
+    {
+        try {
+            $penggajian = Penggajian::with('karyawan')->findOrFail($id);
+
+            if (empty($penggajian->karyawan?->email)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email karyawan tidak tersedia'
+                ], 400);
+            }
+
+            \Mail::to($penggajian->karyawan->email)
+                ->send(new \App\Mail\SlipGajiMail($penggajian));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Slip gaji berhasil dikirim ke ' . $penggajian->karyawan->email,
+                'data'    => [
+                    'penggajian_id' => $penggajian->id,
+                    'karyawan'      => $penggajian->karyawan->nama_lengkap,
+                    'email'         => $penggajian->karyawan->email,
+                    'bulan'         => $penggajian->gajian_bulan->translatedFormat('F Y'),
+                ]
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data penggajian tidak ditemukan'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengirim email',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Kirim slip gaji ke Email untuk semua karyawan dalam satu bulan
+     */
+    public function sendEmailBulk(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'gajian_bulan' => 'required|date',
+            'posisi'       => 'nullable|in:jasa,supir,keamanan,cleaning_service,operator',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $gajianBulan = Carbon::parse($request->gajian_bulan)->startOfMonth();
+
+            $query = Penggajian::with('karyawan')
+                ->whereYear('gajian_bulan', $gajianBulan->year)
+                ->whereMonth('gajian_bulan', $gajianBulan->month);
+
+            if ($request->filled('posisi')) {
+                $query->whereHas('karyawan', fn($q) => $q->where('posisi', $request->posisi));
+            }
+
+            $penggajianList = $query->get();
+
+            if ($penggajianList->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada data penggajian untuk ' . $gajianBulan->translatedFormat('F Y'),
+                ], 404);
+            }
+
+            $berhasil = [];
+            $gagal    = [];
+
+            foreach ($penggajianList as $penggajian) {
+                $karyawan = $penggajian->karyawan;
+
+                if (empty($karyawan?->email)) {
+                    $gagal[] = [
+                        'penggajian_id' => $penggajian->id,
+                        'nama'          => optional($karyawan)->nama_lengkap ?? 'N/A',
+                        'alasan'        => 'Email tidak tersedia',
+                    ];
+                    continue;
+                }
+
+                try {
+                    \Mail::to($karyawan->email)
+                        ->send(new \App\Mail\SlipGajiMail($penggajian));
+
+                    $berhasil[] = [
+                        'penggajian_id' => $penggajian->id,
+                        'nama'          => $karyawan->nama_lengkap,
+                        'email'         => $karyawan->email,
+                    ];
+                } catch (\Exception $e) {
+                    $gagal[] = [
+                        'penggajian_id' => $penggajian->id,
+                        'nama'          => optional($karyawan)->nama_lengkap ?? 'N/A',
+                        'alasan'        => $e->getMessage(),
+                    ];
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => count($berhasil) . ' slip gaji berhasil dikirim, ' . count($gagal) . ' gagal.',
+                'data'    => [
+                    'periode'        => $gajianBulan->translatedFormat('F Y'),
+                    'total'          => $penggajianList->count(),
+                    'berhasil_count' => count($berhasil),
+                    'gagal_count'    => count($gagal),
+                    'berhasil'       => $berhasil,
+                    'gagal'          => $gagal,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memproses pengiriman email',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Kirim slip gaji ke WhatsApp
      */
     public function sendWhatsApp($id)
@@ -886,10 +1030,12 @@ class PenggajianController extends Controller
             $bpjsKesehatan = 0;
             $bpjsJht       = 0;
             $bpjsJp        = 0;
+            $upahKotorKaryawan = $jumlahHariKerja * $gajiHarian;
+            $upahDiterima      = $upahKotorKaryawan;
         } else {
-            $bpjsKesehatan = $jumlahPenghasilanKotor * 0.01;
-            $bpjsJht       = $jumlahPenghasilanKotor * 0.02;
-            $bpjsJp        = $jumlahPenghasilanKotor * 0.01;
+            $bpjsKesehatan = round($jumlahPenghasilanKotor * 0.01);
+            $bpjsJht       = round($jumlahPenghasilanKotor * 0.02);
+            $bpjsJp        = round($jumlahPenghasilanKotor * 0.01);
         }
 
         $totalBpjs        = $bpjsKesehatan + $bpjsJht + $bpjsJp;
@@ -1053,125 +1199,125 @@ class PenggajianController extends Controller
     /**
      * Get list bulan-bulan yang sudah ada penggajian
      */
-    public function getAvailableMonths()
-    {
-        try {
-            $months = Penggajian::select(
-                    DB::raw('DISTINCT gajian_bulan as bulan'),
-                    DB::raw('COUNT(*) as jumlah_karyawan')
-                )
-                ->groupBy('gajian_bulan')
-                ->orderBy('bulan', 'desc')
-                ->get()
-                ->map(function ($item) {
-                    $bulan = Carbon::parse($item->bulan);
-                    return [
-                        'value' => $item->bulan,
-                        'text' => $bulan->translatedFormat('F Y'),
-                        'jumlah_karyawan' => $item->jumlah_karyawan
-                    ];
-                });
+    // public function getAvailableMonths()
+    // {
+    //     try {
+    //         $months = Penggajian::select(
+    //                 DB::raw('DISTINCT gajian_bulan as bulan'),
+    //                 DB::raw('COUNT(*) as jumlah_karyawan')
+    //             )
+    //             ->groupBy('gajian_bulan')
+    //             ->orderBy('bulan', 'desc')
+    //             ->get()
+    //             ->map(function ($item) {
+    //                 $bulan = Carbon::parse($item->bulan);
+    //                 return [
+    //                     'value' => $item->bulan,
+    //                     'text' => $bulan->translatedFormat('F Y'),
+    //                     'jumlah_karyawan' => $item->jumlah_karyawan
+    //                 ];
+    //             });
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Daftar bulan penggajian berhasil diambil',
-                'data' => $months
-            ], 200);
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'Daftar bulan penggajian berhasil diambil',
+    //             'data' => $months
+    //         ], 200);
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal mengambil daftar bulan penggajian',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Gagal mengambil daftar bulan penggajian',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
 
     /**
      * Preview data yang akan dicopy
      */
-    public function previewCopy(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'bulan_referensi' => 'required|date',
-            'bulan_baru'      => 'required|date|after:bulan_referensi',
-            'karyawan_id'     => 'nullable|array',
-            'karyawan_id.*'   => 'exists:karyawans,id',
-        ]);
+    // public function previewCopy(Request $request)
+    // {
+    //     $validator = Validator::make($request->all(), [
+    //         'bulan_referensi' => 'required|date',
+    //         'bulan_baru'      => 'required|date|after:bulan_referensi',
+    //         'karyawan_id'     => 'nullable|array',
+    //         'karyawan_id.*'   => 'exists:karyawans,id',
+    //     ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validasi gagal',
-                'errors'  => $validator->errors()
-            ], 422);
-        }
+    //     if ($validator->fails()) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Validasi gagal',
+    //             'errors'  => $validator->errors()
+    //         ], 422);
+    //     }
 
-        try {
-            $bulanReferensi = Carbon::parse($request->bulan_referensi)->startOfMonth();
-            $bulanBaru      = Carbon::parse($request->bulan_baru)->startOfMonth();
+    //     try {
+    //         $bulanReferensi = Carbon::parse($request->bulan_referensi)->startOfMonth();
+    //         $bulanBaru      = Carbon::parse($request->bulan_baru)->startOfMonth();
 
-            $query = Penggajian::with('karyawan')->where('gajian_bulan', $bulanReferensi);
+    //         $query = Penggajian::with('karyawan')->where('gajian_bulan', $bulanReferensi);
 
-            if ($request->has('karyawan_id') && !empty($request->karyawan_id)) {
-                $query->whereIn('karyawan_id', $request->karyawan_id);
-            }
+    //         if ($request->has('karyawan_id') && !empty($request->karyawan_id)) {
+    //             $query->whereIn('karyawan_id', $request->karyawan_id);
+    //         }
 
-            $penggajianReferensi = $query->get();
+    //         $penggajianReferensi = $query->get();
 
-            if ($penggajianReferensi->isEmpty()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Tidak ada data penggajian pada ' . $bulanReferensi->translatedFormat('F Y')
-                ], 404);
-            }
+    //         if ($penggajianReferensi->isEmpty()) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Tidak ada data penggajian pada ' . $bulanReferensi->translatedFormat('F Y')
+    //             ], 404);
+    //         }
 
-            // Cek yang sudah ada di bulan baru
-            $karyawanIdList = $penggajianReferensi->pluck('karyawan_id')->toArray();
-            $existingPenggajian = Penggajian::whereIn('karyawan_id', $karyawanIdList)
-                ->where('gajian_bulan', $bulanBaru)
-                ->pluck('karyawan_id')
-                ->toArray();
+    //         // Cek yang sudah ada di bulan baru
+    //         $karyawanIdList = $penggajianReferensi->pluck('karyawan_id')->toArray();
+    //         $existingPenggajian = Penggajian::whereIn('karyawan_id', $karyawanIdList)
+    //             ->where('gajian_bulan', $bulanBaru)
+    //             ->pluck('karyawan_id')
+    //             ->toArray();
 
-            $willBeCreated = [];
-            $willBeSkipped = [];
+    //         $willBeCreated = [];
+    //         $willBeSkipped = [];
 
-            foreach ($penggajianReferensi as $referensi) {
-                $data = [
-                    'karyawan_id'  => $referensi->karyawan_id,
-                    'nama'         => optional($referensi->karyawan)->nama_lengkap,
-                    'posisi'       => optional($referensi->karyawan)->posisi,
-                    'gaji_pokok'   => $referensi->jumlah_penghasilan_kotor,
-                    'gaji_harian'  => $referensi->gaji_harian,
-                ];
+    //         foreach ($penggajianReferensi as $referensi) {
+    //             $data = [
+    //                 'karyawan_id'  => $referensi->karyawan_id,
+    //                 'nama'         => optional($referensi->karyawan)->nama_lengkap,
+    //                 'posisi'       => optional($referensi->karyawan)->posisi,
+    //                 'gaji_pokok'   => $referensi->jumlah_penghasilan_kotor,
+    //                 'gaji_harian'  => $referensi->gaji_harian,
+    //             ];
 
-                if (in_array($referensi->karyawan_id, $existingPenggajian)) {
-                    $willBeSkipped[] = $data;
-                } else {
-                    $willBeCreated[] = $data;
-                }
-            }
+    //             if (in_array($referensi->karyawan_id, $existingPenggajian)) {
+    //                 $willBeSkipped[] = $data;
+    //             } else {
+    //                 $willBeCreated[] = $data;
+    //             }
+    //         }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Preview data penggajian',
-                'data'    => [
-                    'bulan_referensi'        => $bulanReferensi->translatedFormat('F Y'),
-                    'bulan_baru'             => $bulanBaru->translatedFormat('F Y'),
-                    'will_be_created'        => $willBeCreated,
-                    'will_be_created_count'  => count($willBeCreated),
-                    'will_be_skipped'        => $willBeSkipped,
-                    'will_be_skipped_count'  => count($willBeSkipped),
-                    'total_referensi'        => $penggajianReferensi->count()
-                ]
-            ], 200);
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'Preview data penggajian',
+    //             'data'    => [
+    //                 'bulan_referensi'        => $bulanReferensi->translatedFormat('F Y'),
+    //                 'bulan_baru'             => $bulanBaru->translatedFormat('F Y'),
+    //                 'will_be_created'        => $willBeCreated,
+    //                 'will_be_created_count'  => count($willBeCreated),
+    //                 'will_be_skipped'        => $willBeSkipped,
+    //                 'will_be_skipped_count'  => count($willBeSkipped),
+    //                 'total_referensi'        => $penggajianReferensi->count()
+    //             ]
+    //         ], 200);
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal membuat preview',
-                'error'   => $e->getMessage()
-            ], 500);
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Gagal membuat preview',
+    //             'error'   => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
 }
