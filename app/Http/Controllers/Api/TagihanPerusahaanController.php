@@ -1201,31 +1201,35 @@ class TagihanPerusahaanController extends Controller
      * @return array kolom-kolom hasil kalkulasi siap di-merge ke data create/update
      */
     private function hitungTagihan(
-        float $jumlahPenghasilanKotor,
-        float $jumlahHariKerja,
-        float $gajiHarian,
-        float $jlhLembur,
-        float $thr,
-        float $seragam,
-        float $feeManajemen,
+    float $jumlahPenghasilanKotor,
+    float $jumlahHariKerja,
+    float $gajiHarian,
+    float $jlhLembur,
+    float $thr,
+    float $seragam,
+    float $feeManajemen,
     ): array {
         if ($jumlahHariKerja < 7) {
-            $bpjsKesehatan = 0;
-            $jkk           = 0;
-            $jkm           = 0;
-            $jht           = 0;
-            $jp            = 0;
-            $seragam       = 0;
-            $feeManajemen  = 0;
-            $upahDiterimaPekerja  = round($gajiHarian * $jumlahHariKerja);
-            $upahTotal            = $upahDiterimaPekerja; // Total tagihan hanya upah diterima pekerja
-        } else {
-            $bpjsKesehatan = round($jumlahPenghasilanKotor * 0.04);
-            $jht           = round($jumlahPenghasilanKotor * 0.037);
-            $jp            = round($jumlahPenghasilanKotor * 0.02);
-            $jkk           = round($jumlahPenghasilanKotor * 0.0024);
-            $jkm           = round($jumlahPenghasilanKotor * 0.003);
+            $upahDiterimaPekerja = $gajiHarian * $jumlahHariKerja;
+
+            return [
+                'bpjs_kesehatan'          => 0,
+                'jkk'                     => 0,
+                'jkm'                     => 0,
+                'jht'                     => 0,
+                'jp'                      => 0,
+                'seragam_cs_dan_keamanan' => 0,
+                'fee_manajemen'           => 0,
+                'upah_diterima_pekerja'   => $upahDiterimaPekerja,
+                'upah_total'              => $upahDiterimaPekerja, // Total tagihan hanya upah diterima pekerja
+            ];
         }
+
+        $bpjsKesehatan = round($jumlahPenghasilanKotor * 0.04);
+        $jht           = round($jumlahPenghasilanKotor * 0.037);
+        $jp            = round($jumlahPenghasilanKotor * 0.02);
+        $jkk           = round($jumlahPenghasilanKotor * 0.0024);
+        $jkm           = round($jumlahPenghasilanKotor * 0.003);
 
         $totalIuranPerusahaan = $bpjsKesehatan + $jkk + $jkm + $jht + $jp + $seragam + $feeManajemen;
         $upahDiterimaPekerja  = round(($gajiHarian * $jumlahHariKerja) + $jlhLembur + $thr - $gajiHarian);
