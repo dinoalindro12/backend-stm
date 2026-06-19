@@ -961,7 +961,7 @@ class TagihanPerusahaanController extends Controller
                 $dataBaru = [
                     'karyawan_id'              => $referensi->karyawan_id,
                     'jumlah_penghasilan_kotor' => $referensi->jumlah_penghasilan_kotor,
-                    'jumlah_hari_kerja'        => 0,
+                    'jumlah_hari_kerja'        => $referensi->jumlah_hari_kerja,
                     'gaji_harian'              => $referensi->gaji_harian,
                     'tagihan_bulan'            => $bulanTujuan->format('Y-m-d'),
                     'admin_id'                 => $request->user()->id,
