@@ -19,6 +19,7 @@ class Rekruitmen extends Model
         'nama',
         'nama_lengkap',
         'posisi_dilamar',
+        'email',
         'no_wa',
         'alamat',
         'foto_ktp',

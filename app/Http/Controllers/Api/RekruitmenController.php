@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use App\Mail\TokenPendaftaranMail;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 
 
 class RekruitmenController extends Controller
@@ -107,6 +110,7 @@ public function store(Request $request): JsonResponse
         'posisi_dilamar' => 'required|string|max:255',
         'no_wa' => 'required|regex:/^[0-9]+$/|string|max:16',
         'alamat' => 'nullable|string',
+        'email' => 'required|email|max:255',
         'foto_ktp' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         'foto_kk' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         'foto_skck' => 'required|image|mimes:jpeg,png,jpg|max:2048',
@@ -118,6 +122,9 @@ public function store(Request $request): JsonResponse
     ],[
         'nik.regex' => 'NIK harus berupa angka saja.',
         'no_wa.regex' => 'Nomor WhatsApp harus berupa angka saja.',
+        'email.required' => 'Email wajib diisi.',
+        'email.email' => 'Format email tidak valid.',
+        'email.max' => 'Email tidak boleh lebih dari 255 karakter.',
         'nik.max' => 'NIK tidak boleh lebih dari 16 karakter.',
         'nik.string' => 'NIK harus berupa string.',
         'nik.unique' => 'Anda sudah pernah melamar di lowongan yang sama sebelumnya.',
@@ -197,7 +204,12 @@ public function store(Request $request): JsonResponse
         $data['token_pendaftaran'] = (string) Str::uuid();
 
         $rekruitmen = Rekruitmen::create($data);
-
+        // Kirim email token pendaftaran
+        try {
+            Mail::to($rekruitmen->email)->send(new TokenPendaftaranMail($rekruitmen));
+        } catch (\Throwable $e) {
+            Log::warning('Gagal mengirim email token pendaftaran: ' . $e->getMessage());
+        }
         return response()->json([
             'success' => true,
             'message' => 'Pendaftaran berhasil',
