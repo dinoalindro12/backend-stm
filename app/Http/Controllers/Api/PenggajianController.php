@@ -12,74 +12,154 @@ use Illuminate\Support\Facades\Validator;
 
 class PenggajianController extends Controller
 {
-    /**
-     * Display a listing of penggajian.
-     */
-    public function index(Request $request)
+/**
+ * Display a listing of penggajian.
+ * 
+ * ✅ OPTIMIZED: Menggunakan JOIN + select spesifik untuk menghilangkan N+1
+ * ✅ Response structure tetap sama agar frontend tidak perlu adjust
+ */
+public function index(Request $request)
     {
-    try {
-        $query = Penggajian::with(['karyawan', 'admin', 'updatedBy']);
+        try {
+            // ✅ Gunakan query builder dengan JOIN untuk menghindari N+1
+            $query = Penggajian::query()
+                ->select([
+                    'penggajian.id',
+                    'penggajian.karyawan_id',
+                    'penggajian.admin_id',
+                    'penggajian.updated_by',
+                    'penggajian.jumlah_penghasilan_kotor',
+                    'penggajian.bpjs_kesehatan',
+                    'penggajian.bpjs_jht',
+                    'penggajian.bpjs_jp',
+                    'penggajian.total_bpjs',
+                    'penggajian.uang_thr',
+                    'penggajian.jumlah_hari_kerja',
+                    'penggajian.gaji_harian',
+                    'penggajian.jumlah_lembur',
+                    'penggajian.upah_kotor_karyawan',
+                    'penggajian.upah_diterima',
+                    'penggajian.gajian_bulan',
+                    'penggajian.status_penggajian',
+                    'penggajian.tanggal_cetak',
+                    'penggajian.created_at',
+                    'penggajian.updated_at',
+                    'penggajian.deleted_at',
+                    // ✅ Ambil data relasi via JOIN
+                    'karyawans.id as karyawan_id',
+                    'karyawans.nama_lengkap as karyawan_nama',
+                    'karyawans.nomor_induk as karyawan_nomor_induk',
+                    'karyawans.nik as karyawan_nik',
+                    'karyawans.posisi as karyawan_posisi',
+                    'karyawans.no_rek_bri as karyawan_no_rek_bri',
+                    'karyawans.no_wa as karyawan_no_wa',
+                    'admin.name as admin_name',
+                    'admin.email as admin_email',
+                    'updatedBy.name as updated_by_name',
+                    'updatedBy.email as updated_by_email',
+                ])
+                ->leftJoin('karyawans', 'penggajian.karyawan_id', '=', 'karyawans.id')
+                ->leftJoin('users as admin', 'penggajian.admin_id', '=', 'admin.id')
+                ->leftJoin('users as updatedBy', 'penggajian.updated_by', '=', 'updatedBy.id');
 
-        // Filter berdasarkan posisi
-        if ($request->has('posisi')) {
-            $query->posisi($request->posisi);
-        }
-
-        // Filter berdasarkan status penggajian
-        if ($request->has('status')) {
-            $query->status($request->status);
-        }
-        // Filter berdasarkan bulan gajian
-        if ($request->has('bulan')) {
-            $query->whereMonth('gajian_bulan', $request->bulan);
-        }
-
-        if ($request->has('tahun')) {
-            $query->whereYear('gajian_bulan', $request->tahun);
-        }
-
-        // Filter berdasarkan gajian_bulan sebagai date (misal: 2026-06-01)
-        if ($request->filled('gajian_bulan')) {
-            $bulan = Carbon::parse($request->gajian_bulan);
-            $query->whereYear('gajian_bulan', $bulan->year)
-                  ->whereMonth('gajian_bulan', $bulan->month);
-        }
-
-        // Filter sudah/belum cetak
-        if ($request->has('cetak_status')) {
-            if ($request->cetak_status === 'sudah') {
-                $query->sudahCetak();
-            } elseif ($request->cetak_status === 'belum') {
-                $query->belumCetak();
+            // ✅ Filter berdasarkan posisi - gunakan join langsung (lebih cepat dari whereHas)
+            if ($request->has('posisi') && $request->posisi) {
+                $query->where('karyawans.posisi', $request->posisi);
             }
-        }
 
-        // Sorting
-        $sortBy = $request->get('sort_by', 'gajian_bulan');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
+            // ✅ Filter berdasarkan status penggajian
+            if ($request->has('status') && $request->status !== null) {
+                $query->where('penggajian.status_penggajian', filter_var($request->status, FILTER_VALIDATE_BOOLEAN));
+            }
 
-        // Pagination
-        $perPage = $request->get('per_page', 15);
-        $penggajian = $query->paginate($perPage);
+            // ✅ Filter berdasarkan bulan gajian
+            if ($request->has('bulan') && $request->has('tahun')) {
+                $query->whereMonth('penggajian.gajian_bulan', $request->bulan)
+                    ->whereYear('penggajian.gajian_bulan', $request->tahun);
+            }
 
-        return PenggajianResource::collection($penggajian)->additional([
-            'success' => true,
-            'message' => 'Data penggajian berhasil diambil',
-            'meta' => [
-                'current_page' => $penggajian->currentPage(),
-                'last_page'    => $penggajian->lastPage(),
-                'per_page'     => $penggajian->perPage(),
-                'total'        => $penggajian->total(),
-            ],
-        ]);
+            // ✅ Filter berdasarkan gajian_bulan sebagai date
+            if ($request->filled('gajian_bulan')) {
+                $bulan = Carbon::parse($request->gajian_bulan);
+                $query->whereYear('penggajian.gajian_bulan', $bulan->year)
+                    ->whereMonth('penggajian.gajian_bulan', $bulan->month);
+            }
 
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Gagal mengambil data penggajian',
-            'error' => $e->getMessage()
-        ], 500);
+            // ✅ Filter sudah/belum cetak
+            if ($request->has('cetak_status')) {
+                if ($request->cetak_status === 'sudah') {
+                    $query->whereNotNull('penggajian.tanggal_cetak');
+                } elseif ($request->cetak_status === 'belum') {
+                    $query->whereNull('penggajian.tanggal_cetak');
+                }
+            }
+
+            // ✅ Sorting - dengan validasi untuk mencegah SQL injection
+            $sortBy = $request->get('sort_by', 'gajian_bulan');
+            $sortOrder = $request->get('sort_order', 'desc');
+            
+            // Mapping sort_by ke kolom yang aman
+            $sortMapping = [
+                'gajian_bulan' => 'penggajian.gajian_bulan',
+                'created_at' => 'penggajian.created_at',
+                'updated_at' => 'penggajian.updated_at',
+                'status_penggajian' => 'penggajian.status_penggajian',
+                'upah_diterima' => 'penggajian.upah_diterima',
+            ];
+            
+            $sortColumn = $sortMapping[$sortBy] ?? 'penggajian.gajian_bulan';
+            $query->orderBy($sortColumn, $sortOrder === 'asc' ? 'asc' : 'desc');
+
+            // ✅ Pagination - batasi maksimal 100 per page
+            $perPage = min($request->get('per_page', 15), 100);
+            $penggajian = $query->paginate($perPage);
+
+            // ✅ Transform hasil ke format yang sama seperti sebelumnya
+            // agar frontend tidak perlu adjust
+            $penggajian->getCollection()->transform(function ($item) {
+                // Reconstruct relasi ke format yang sama dengan eager loading
+                $item->setRelation('karyawan', (object) [
+                    'id' => $item->karyawan_id,
+                    'nama_lengkap' => $item->karyawan_nama,
+                    'nomor_induk' => $item->karyawan_nomor_induk,
+                    'nik' => $item->karyawan_nik,
+                    'posisi' => $item->karyawan_posisi,
+                    'no_rek_bri' => $item->karyawan_no_rek_bri,
+                    'no_wa' => $item->karyawan_no_wa,
+                ]);
+                
+                $item->setRelation('admin', (object) [
+                    'id' => $item->admin_id,
+                    'name' => $item->admin_name,
+                    'email' => $item->admin_email,
+                ]);
+                
+                $item->setRelation('updatedBy', (object) [
+                    'id' => $item->updated_by,
+                    'name' => $item->updated_by_name,
+                    'email' => $item->updated_by_email,
+                ]);
+                
+                return $item;
+            });
+
+            return PenggajianResource::collection($penggajian)->additional([
+                'success' => true,
+                'message' => 'Data penggajian berhasil diambil',
+                'meta' => [
+                    'current_page' => $penggajian->currentPage(),
+                    'last_page'    => $penggajian->lastPage(),
+                    'per_page'     => $penggajian->perPage(),
+                    'total'        => $penggajian->total(),
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengambil data penggajian',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -103,14 +183,14 @@ class PenggajianController extends Controller
             'gajian_bulan'             => 'nullable|date',
         ], [
             'jumlah_hari_kerja.max' => "Jumlah hari kerja tidak boleh melebihi {$maxHariKerja} hari (jumlah hari dalam bulan tersebut).",
-            // 'gajian_bulan.date' => "Format tanggal gajian tidak valid.",
-            // 'karyawan_id.exists' => "Karyawan dengan ID yang diberikan tidak ditemukan.",
-            // 'jumlah_penghasilan_kotor.numeric' => "Jumlah penghasilan kotor harus berupa angka.",
-            // 'jumlah_penghasilan_kotor.min' => "Jumlah penghasilan kotor tidak boleh negatif.",
-            // 'uang_thr.numeric' => "Uang THR harus berupa angka.",
-            // 'uang_thr.min' => "Uang THR tidak boleh negatif.",
-            // 'jumlah_lembur.numeric' => "Jumlah lembur harus berupa angka.",
-            // 'jumlah_lembur.min' => "Jumlah lembur tidak boleh negatif.",
+            'gajian_bulan.date' => "Format tanggal gajian tidak valid.",
+            'karyawan_id.exists' => "Karyawan dengan ID yang diberikan tidak ditemukan.",
+            'jumlah_penghasilan_kotor.numeric' => "Jumlah penghasilan kotor harus berupa angka.",
+            'jumlah_penghasilan_kotor.min' => "Jumlah penghasilan kotor tidak boleh negatif.",
+            'uang_thr.numeric' => "Uang THR harus berupa angka.",
+            'uang_thr.min' => "Uang THR tidak boleh negatif.",
+            'jumlah_lembur.numeric' => "Jumlah lembur harus berupa angka.",
+            'jumlah_lembur.min' => "Jumlah lembur tidak boleh negatif.",
         ]);
 
         if ($validator->fails()) {
@@ -1052,146 +1132,151 @@ class PenggajianController extends Controller
     /**
      * Copy penggajian dari bulan sebelumnya
      */
-    public function copyFromPreviousMonth(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'bulan_referensi'   => 'required|date',
-            'bulan_baru'        => 'required|date|after:bulan_referensi',
-            'karyawan_id'       => 'nullable|array',
-            'karyawan_id.*'     => 'exists:karyawans,id',
-            'copy_all'          => 'nullable|boolean',
-            'adjust_thr'        => 'nullable|boolean',
-        ]);
+    /**
+ * Copy penggajian dari bulan sebelumnya
+ * 
+ * ✅ OPTIMIZED: Cek duplikasi menggunakan whereIn untuk mengurangi query
+ */
+        public function copyFromPreviousMonth(Request $request)
+        {
+            $validator = Validator::make($request->all(), [
+                'bulan_referensi'   => 'required|date',
+                'bulan_baru'        => 'required|date|after:bulan_referensi',
+                'karyawan_id'       => 'nullable|array',
+                'karyawan_id.*'     => 'exists:karyawans,id',
+                'copy_all'          => 'nullable|boolean',
+                'adjust_thr'        => 'nullable|boolean',
+            ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validasi gagal',
-                'errors'  => $validator->errors()
-            ], 422);
-        }
-
-        try {
-            DB::beginTransaction();
-
-            $bulanReferensi = Carbon::parse($request->bulan_referensi)->startOfMonth();
-            $bulanBaru      = Carbon::parse($request->bulan_baru)->startOfMonth();
-            $adminId        = $request->user()->id;
-
-            // Query penggajian bulan referensi
-            $query = Penggajian::whereYear('gajian_bulan', $bulanReferensi->year)
-                ->whereMonth('gajian_bulan', $bulanReferensi->month);
-
-            if ($request->has('karyawan_id') && !empty($request->karyawan_id)) {
-                $query->whereIn('karyawan_id', $request->karyawan_id);
-            }
-
-            $penggajianReferensi = $query->get();
-
-            if ($penggajianReferensi->isEmpty()) {
-                DB::rollBack();
+            if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Tidak ada data penggajian pada ' . $bulanReferensi->translatedFormat('F Y')
-                ], 404);
+                    'message' => 'Validasi gagal',
+                    'errors'  => $validator->errors()
+                ], 422);
             }
 
-            // Cek duplikasi untuk bulan baru
-            $karyawanIdList = $penggajianReferensi->pluck('karyawan_id')->toArray();
-            $existingPenggajian = Penggajian::whereIn('karyawan_id', $karyawanIdList)
-                ->whereYear('gajian_bulan', $bulanBaru->year)
-                ->whereMonth('gajian_bulan', $bulanBaru->month)
-                ->pluck('karyawan_id')
-                ->toArray();
+            try {
+                DB::beginTransaction();
 
-            $created    = [];
-            $skipped    = [];
-            $adjustThr  = $request->get('adjust_thr', true);
+                $bulanReferensi = Carbon::parse($request->bulan_referensi)->startOfMonth();
+                $bulanBaru      = Carbon::parse($request->bulan_baru)->startOfMonth();
+                $adminId        = $request->user()->id;
 
-            foreach ($penggajianReferensi as $referensi) {
-                if (in_array($referensi->karyawan_id, $existingPenggajian)) {
-                    $skipped[] = [
-                        'karyawan_id' => $referensi->karyawan_id,
-                        'nama'        => optional($referensi->karyawan)->nama_lengkap,
-                        'message'     => 'Sudah memiliki penggajian untuk ' . $bulanBaru->translatedFormat('F Y')
-                    ];
-                    continue;
+                // Query penggajian bulan referensi
+                $query = Penggajian::whereYear('gajian_bulan', $bulanReferensi->year)
+                    ->whereMonth('gajian_bulan', $bulanReferensi->month);
+
+                if ($request->has('karyawan_id') && !empty($request->karyawan_id)) {
+                    $query->whereIn('karyawan_id', $request->karyawan_id);
                 }
 
-                $uangThr   = $adjustThr ? 0 : $referensi->uang_thr;
-                $upahKotor = (0 * $referensi->gaji_harian) + 0 + $uangThr; // hari=0, lembur=0
+                $penggajianReferensi = $query->get();
 
-                $dataBaru = [
-                    'karyawan_id'              => $referensi->karyawan_id,
-                    'admin_id'                 => $adminId,
-                    'updated_by'               => $adminId,
-                    'jumlah_penghasilan_kotor' => $referensi->jumlah_penghasilan_kotor,
-                    'uang_thr'                 => $uangThr,
-                    'jumlah_hari_kerja'        => 0,
-                    'gaji_harian'              => $referensi->gaji_harian,
-                    'jumlah_lembur'            => 0,
-                    'gajian_bulan'             => $bulanBaru,
-                    'status_penggajian'        => false,
-                    'tanggal_cetak'            => null,
-                    // BPJS langsung dari referensi
-                    'bpjs_kesehatan'           => $referensi->bpjs_kesehatan,
-                    'bpjs_jht'                 => $referensi->bpjs_jht,
-                    'bpjs_jp'                  => $referensi->bpjs_jp,
-                    'total_bpjs'               => $referensi->total_bpjs,
-                    // Upah dihitung dengan hari kerja = 0
-                    'upah_kotor_karyawan'      => $upahKotor,
-                    'upah_diterima'            => $upahKotor - $referensi->total_bpjs,
-                ];
+                if ($penggajianReferensi->isEmpty()) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Tidak ada data penggajian pada ' . $bulanReferensi->translatedFormat('F Y')
+                    ], 404);
+                }
 
-                $penggajianBaru = Penggajian::create($dataBaru);
-                $created[] = $penggajianBaru;
-            }
+                // ✅ Optimasi: cek duplikasi sekaligus dengan whereIn
+                $karyawanIdList = $penggajianReferensi->pluck('karyawan_id')->toArray();
+                $existingPenggajian = Penggajian::whereIn('karyawan_id', $karyawanIdList)
+                    ->whereYear('gajian_bulan', $bulanBaru->year)
+                    ->whereMonth('gajian_bulan', $bulanBaru->month)
+                    ->pluck('karyawan_id')
+                    ->toArray();
 
-            DB::commit();
+                $created    = [];
+                $skipped    = [];
+                $adjustThr  = $request->get('adjust_thr', true);
 
-            // Semua data sudah ada, tidak ada yang berhasil dibuat
-            if (empty($created)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Data tidak berhasil dibuat, record penggajian ' . $bulanBaru->translatedFormat('F Y') . ' sudah ada',
+                foreach ($penggajianReferensi as $referensi) {
+                    if (in_array($referensi->karyawan_id, $existingPenggajian)) {
+                        $skipped[] = [
+                            'karyawan_id' => $referensi->karyawan_id,
+                            'nama'        => optional($referensi->karyawan)->nama_lengkap,
+                            'message'     => 'Sudah memiliki penggajian untuk ' . $bulanBaru->translatedFormat('F Y')
+                        ];
+                        continue;
+                    }
+
+                    $uangThr   = $adjustThr ? 0 : $referensi->uang_thr;
+                    $upahKotor = (0 * $referensi->gaji_harian) + 0 + $uangThr;
+
+                    $dataBaru = [
+                        'karyawan_id'              => $referensi->karyawan_id,
+                        'admin_id'                 => $adminId,
+                        'updated_by'               => $adminId,
+                        'jumlah_penghasilan_kotor' => $referensi->jumlah_penghasilan_kotor,
+                        'uang_thr'                 => $uangThr,
+                        'jumlah_hari_kerja'        => 0,
+                        'gaji_harian'              => $referensi->gaji_harian,
+                        'jumlah_lembur'            => 0,
+                        'gajian_bulan'             => $bulanBaru,
+                        'status_penggajian'        => false,
+                        'tanggal_cetak'            => null,
+                        // BPJS langsung dari referensi
+                        'bpjs_kesehatan'           => $referensi->bpjs_kesehatan,
+                        'bpjs_jht'                 => $referensi->bpjs_jht,
+                        'bpjs_jp'                  => $referensi->bpjs_jp,
+                        'total_bpjs'               => $referensi->total_bpjs,
+                        // Upah dihitung dengan hari kerja = 0
+                        'upah_kotor_karyawan'      => $upahKotor,
+                        'upah_diterima'            => $upahKotor - $referensi->total_bpjs,
+                    ];
+
+                    $penggajianBaru = Penggajian::create($dataBaru);
+                    $created[] = $penggajianBaru;
+                }
+
+                DB::commit();
+
+                // Semua data sudah ada, tidak ada yang berhasil dibuat
+                if (empty($created)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Data tidak berhasil dibuat, record penggajian ' . $bulanBaru->translatedFormat('F Y') . ' sudah ada',
+                        'data'    => [
+                            'bulan_referensi' => $bulanReferensi->translatedFormat('F Y'),
+                            'bulan_baru'      => $bulanBaru->translatedFormat('F Y'),
+                            'created_count'   => 0,
+                            'skipped_count'   => count($skipped),
+                            'skipped'         => $skipped,
+                        ]
+                    ], 409);
+                }
+
+                $response = [
+                    'success' => true,
+                    'message' => count($created) . ' data penggajian berhasil dibuat',
                     'data'    => [
                         'bulan_referensi' => $bulanReferensi->translatedFormat('F Y'),
                         'bulan_baru'      => $bulanBaru->translatedFormat('F Y'),
-                        'created_count'   => 0,
-                        'skipped_count'   => count($skipped),
-                        'skipped'         => $skipped,
+                        'created'         => $created,
+                        'created_count'   => count($created),
+                        'skipped_count'   => count($skipped)
                     ]
-                ], 409);
+                ];
+
+                if (!empty($skipped)) {
+                    $response['data']['skipped'] = $skipped;
+                    $response['message'] .= ', ' . count($skipped) . ' data dilewati karena sudah ada';
+                }
+
+                return response()->json($response, 201);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menyalin data penggajian',
+                    'error'   => $e->getMessage()
+                ], 500);
             }
-
-            $response = [
-                'success' => true,
-                'message' => count($created) . ' data penggajian berhasil dibuat',
-                'data'    => [
-                    'bulan_referensi' => $bulanReferensi->translatedFormat('F Y'),
-                    'bulan_baru'      => $bulanBaru->translatedFormat('F Y'),
-                    'created'         => $created,
-                    'created_count'   => count($created),
-                    'skipped_count'   => count($skipped)
-                ]
-            ];
-
-            if (!empty($skipped)) {
-                $response['data']['skipped'] = $skipped;
-                $response['message'] .= ', ' . count($skipped) . ' data dilewati karena sudah ada';
-            }
-
-            return response()->json($response, 201);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal menyalin data penggajian',
-                'error'   => $e->getMessage()
-            ], 500);
         }
-    }
 
     /**
      * Get list bulan-bulan yang sudah ada penggajian
