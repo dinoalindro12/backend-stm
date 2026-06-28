@@ -16,70 +16,106 @@ class TagihanPerusahaanController extends Controller
     /**
      * bagian ini berfungsi untuk menampilkan daftar tagihan perusahaan.
      */
+    /**
+ * Display a listing of tagihan perusahaan.
+ * 
+ * ✅ OPTIMIZED: Menggunakan JOIN untuk menghilangkan N+1
+ */
     public function index(Request $request)
     {
         try {
-            $query = TagihanPerusahaan::with(['karyawan', 'admin', 'updatedBy']);
-            
-            //  FILTER BERDASARKAN BULAN (tagihan_bulan)
+            // ✅ Gunakan query builder dengan JOIN
+            $query = TagihanPerusahaan::query()
+                ->select([
+                    'tagihan_perusahaan.*',
+                    'karyawans.nama_lengkap as karyawan_nama',
+                    'karyawans.nomor_induk as karyawan_nomor_induk',
+                    'karyawans.nik as karyawan_nik',
+                    'karyawans.posisi as karyawan_posisi',
+                    'karyawans.no_rek_bri as karyawan_no_rek_bri',
+                    'karyawans.no_wa as karyawan_no_wa',
+                    'admin.name as admin_name',
+                    'admin.email as admin_email',
+                    'updatedBy.name as updated_by_name',
+                    'updatedBy.email as updated_by_email',
+                ])
+                ->leftJoin('karyawans', 'tagihan_perusahaan.karyawan_id', '=', 'karyawans.id')
+                ->leftJoin('users as admin', 'tagihan_perusahaan.admin_id', '=', 'admin.id')
+                ->leftJoin('users as updatedBy', 'tagihan_perusahaan.updated_by', '=', 'updatedBy.id');
+
+            // ✅ Filter berdasarkan bulan (menggunakan index)
             if ($request->has('bulan') && $request->has('tahun')) {
-                $query->bulanTahunTagihan($request->bulan, $request->tahun);
-            } elseif ($request->has('bulan')) {
-                $query->bulanTagihan($request->bulan);
-            } elseif ($request->has('tahun')) {
-                $query->tahunTagihan($request->tahun);
+                $query->whereMonth('tagihan_perusahaan.tagihan_bulan', $request->bulan)
+                    ->whereYear('tagihan_perusahaan.tagihan_bulan', $request->tahun);
+            } elseif ($request->filled('tagihan_bulan')) {
+                $bulan = Carbon::parse($request->tagihan_bulan);
+                $query->whereYear('tagihan_perusahaan.tagihan_bulan', $bulan->year)
+                    ->whereMonth('tagihan_perusahaan.tagihan_bulan', $bulan->month);
             }
 
-            // Filter berdasarkan tagihan_bulan sebagai date (misal: 2026-06-01)
-            if ($request->filled('tagihan_bulan')) {
-                $bulan = Carbon::parse($request->tagihan_bulan);
-                $query->whereYear('tagihan_bulan', $bulan->year)
-                    ->whereMonth('tagihan_bulan', $bulan->month);
-            }
-            
-            //  FILTER BERDASARKAN RANGE TANGGAL (jika diperlukan)
-            if ($request->has('tanggal_awal') && $request->has('tanggal_akhir')) {
-                $query->periode($request->tanggal_awal, $request->tanggal_akhir);
-            }
-            
-            // Filter berdasarkan posisi
+            // ✅ Filter posisi - menggunakan join langsung
             if ($request->has('posisi')) {
-                $query->posisi($request->posisi);
+                $query->where('karyawans.posisi', $request->posisi);
             }
-            
-            // Filter berdasarkan no_induk
+
+            // ✅ Filter nomor induk
             if ($request->has('no_induk')) {
-                $query->karyawan($request->no_induk);
+                $query->where('karyawans.nomor_induk', 'LIKE', $request->no_induk . '%');
             }
-            
-            // Filter berdasarkan NIK
+
+            // ✅ Filter NIK
             if ($request->has('nik')) {
-                $query->nik($request->nik);
+                $query->where('karyawans.nik', 'LIKE', $request->nik . '%');
             }
+
+            // ✅ Sorting
+            $sortBy = $request->get('sort_by', 'tagihan_perusahaan.tagihan_bulan');
+            $sortOrder = $request->get('sort_order', 'desc');
             
-            // Filter status cetak
-            if ($request->has('status_cetak')) {
-                if ($request->status_cetak === 'sudah') {
-                    $query->sudahCetak();
-                } elseif ($request->status_cetak === 'belum') {
-                    $query->belumCetak();
-                }
-            }
+            $sortMapping = [
+                'tagihan_bulan' => 'tagihan_perusahaan.tagihan_bulan',
+                'created_at' => 'tagihan_perusahaan.created_at',
+                'updated_at' => 'tagihan_perusahaan.updated_at',
+                'upah_total' => 'tagihan_perusahaan.upah_total',
+                'karyawan_nama' => 'karyawans.nama_lengkap',
+            ];
             
-            // Sorting
-            if ($request->has('sort_by')) {
-                $sortOrder = $request->get('sort_order', 'asc');
-                $query->orderBy($request->sort_by, $sortOrder);
-            } else {
-                $query->orderBy('tagihan_bulan', 'desc')->orderBy('created_at', 'desc');
-            }
-            
-            // Pagination
-            $perPage = $request->get('per_page', 15);
+            $sortColumn = $sortMapping[$sortBy] ?? 'tagihan_perusahaan.tagihan_bulan';
+            $query->orderBy($sortColumn, $sortOrder === 'asc' ? 'asc' : 'desc');
+
+            // ✅ Pagination
+            $perPage = min($request->get('per_page', 15), 100);
             $tagihan = $query->paginate($perPage);
-            
+
+            // ✅ Transform hasil ke format yang sama
+            $tagihan->getCollection()->transform(function ($item) {
+                $item->setRelation('karyawan', (object) [
+                    'id' => $item->karyawan_id,
+                    'nama_lengkap' => $item->karyawan_nama,
+                    'nomor_induk' => $item->karyawan_nomor_induk,
+                    'nik' => $item->karyawan_nik,
+                    'posisi' => $item->karyawan_posisi,
+                    'no_rek_bri' => $item->karyawan_no_rek_bri,
+                    'no_wa' => $item->karyawan_no_wa,
+                ]);
+                
+                $item->setRelation('admin', (object) [
+                    'id' => $item->admin_id,
+                    'name' => $item->admin_name,
+                    'email' => $item->admin_email,
+                ]);
+                
+                $item->setRelation('updatedBy', (object) [
+                    'id' => $item->updated_by,
+                    'name' => $item->updated_by_name,
+                    'email' => $item->updated_by_email,
+                ]);
+                
+                return $item;
+            });
+
             return TagihanPerusahaanResource::collection($tagihan);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,

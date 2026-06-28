@@ -1099,36 +1099,43 @@ public function index(Request $request)
      *
      * @return array kolom-kolom hasil kalkulasi siap di-merge ke data create/update
      */
-   private function hitungPenggajian(
+    private function hitungPenggajian(
     float $jumlahPenghasilanKotor,
     float $jumlahHariKerja,
     float $gajiHarian,
     float $jumlahLembur,
     float $uangThr,
-        ): array {
-            if ($jumlahHariKerja < 7) {
-                $upahKotorKaryawan = ($jumlahHariKerja * $gajiHarian)+ $jumlahLembur + $uangThr;
-            } else {
-                $upahKotorKaryawan = ($gajiHarian * $jumlahHariKerja) + $jumlahLembur + $uangThr;
-            }
-
-            // BPJS tetap dihitung untuk semua kondisi
-            $bpjsKesehatan = $jumlahPenghasilanKotor * 0.01;
-            $bpjsJht       = $jumlahPenghasilanKotor * 0.02;
-            $bpjsJp        = $jumlahPenghasilanKotor * 0.01;
-            $totalBpjs     = $bpjsKesehatan + $bpjsJht + $bpjsJp;
-            $upahDiterima  = $upahKotorKaryawan - $totalBpjs;
-
-            return [
-                'bpjs_kesehatan'      => $bpjsKesehatan,
-                'bpjs_jht'            => $bpjsJht,
-                'bpjs_jp'             => $bpjsJp,
-                'total_bpjs'          => $totalBpjs,
-                'upah_kotor_karyawan' => $upahKotorKaryawan,
-                'upah_diterima'       => $upahDiterima,
-            ];
+    ): array {
+        if ($jumlahHariKerja == 1) {
+            $upahKotorKaryawan = $jumlahHariKerja * $gajiHarian;
+        } elseif ($jumlahHariKerja < 7) {
+            $upahKotorKaryawan = ($jumlahHariKerja * $gajiHarian) + $jumlahLembur + $uangThr;
+        } else {
+            $upahKotorKaryawan = ($gajiHarian * $jumlahHariKerja) + $jumlahLembur + $uangThr;
         }
-
+    
+        // BPJS tetap dihitung untuk semua kondisi
+        $bpjsKesehatan = $jumlahPenghasilanKotor * 0.01;
+        $bpjsJht       = $jumlahPenghasilanKotor * 0.02;
+        $bpjsJp        = $jumlahPenghasilanKotor * 0.01;
+        $totalBpjs     = $bpjsKesehatan + $bpjsJht + $bpjsJp;
+    
+        // Jika hanya 1 hari kerja, upah_diterima = upah_kotor_karyawan (BPJS tidak dipotong)
+        if ($jumlahHariKerja == 1) {
+            $upahDiterima = $upahKotorKaryawan;
+        } else {
+            $upahDiterima = $upahKotorKaryawan - $totalBpjs;
+        }
+    
+        return [
+            'bpjs_kesehatan'      => $bpjsKesehatan,
+            'bpjs_jht'            => $bpjsJht,
+            'bpjs_jp'             => $bpjsJp,
+            'total_bpjs'          => $totalBpjs,
+            'upah_kotor_karyawan' => $upahKotorKaryawan,
+            'upah_diterima'       => $upahDiterima,
+        ];
+    }
     /**
      * Copy penggajian dari bulan sebelumnya
      */

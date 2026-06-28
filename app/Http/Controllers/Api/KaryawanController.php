@@ -39,7 +39,7 @@ class KaryawanController extends Controller
                 $query->where('posisi', $request->posisi);
             }
 
-            // Search
+            // Search - tambahkan index untuk kolom yang di-search
             if ($request->filled('search')) {
                 $search = $request->search;
                 $query->where(function ($q) use ($search) {
@@ -51,13 +51,17 @@ class KaryawanController extends Controller
                 });
             }
 
-            // Sorting
+            // Sorting - validasi
             $sortField = $request->get('sort_by', 'created_at');
+            $allowedSorts = ['created_at', 'nomor_induk', 'nama_lengkap', 'posisi', 'status_aktif', 'tanggal_masuk'];
+            if (!in_array($sortField, $allowedSorts)) {
+                $sortField = 'created_at';
+            }
             $sortOrder = $request->get('sort_order', 'desc');
             $query->orderBy($sortField, $sortOrder);
 
             // Pagination
-            $perPage = $request->get('per_page', 10);
+            $perPage = min($request->get('per_page', 10), 100);
             $karyawan = $query->paginate($perPage);
 
             return KaryawanResource::collection($karyawan)->additional([
@@ -67,12 +71,13 @@ class KaryawanController extends Controller
 
         } catch (\Exception $e) {
             return response()->json([
-                'success' => false,
-                'message' => 'Gagal mengambil data',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
-            ], 500);
-        }
+                    'success' => false,
+                    'message' => 'Gagal mengambil data',
+                    'error' => env('APP_DEBUG') ? $e->getMessage() : null
+                ], 500);
+            }
     }
+    
 
     /**
      * Menyimpan data karyawan baru

@@ -24,8 +24,8 @@ class Karyawan extends Model
         'tanggal_masuk',
         'tanggal_keluar',
         'status_aktif',
-        'admin_id',    // admin yang menambahkan
-        'updated_by',  // admin yang terakhir mengubah
+        'admin_id',
+        'updated_by',
     ];
 
     protected $casts = [
@@ -37,26 +37,20 @@ class Karyawan extends Model
         'deleted_at' => 'datetime',
     ];
 
-    /**
-     * Admin yang pertama kali menambahkan karyawan ini
-     */
+    // ========== RELASI ==========
+
     public function admin(): BelongsTo
     {
         return $this->belongsTo(User::class, 'admin_id')->withTrashed();
     }
 
-    /**
-     * Admin yang terakhir melakukan perubahan pada data karyawan ini
-     */
     public function updatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by')->withTrashed();
     }
 
-    /**
-     * Accessor untuk memformat URL gambar.
-     * Mengembalikan full URL atau null jika tidak ada gambar.
-     */
+    // ========== ACCESSORS ==========
+
     protected function image(): Attribute
     {
         return Attribute::make(
@@ -64,9 +58,40 @@ class Karyawan extends Model
         );
     }
 
+    // ========== SCOPES ==========
+
     /**
-     * Auto-set status_aktif menjadi false saat karyawan dihapus (soft delete).
+     * Scope untuk karyawan aktif
      */
+    public function scopeAktif($query)
+    {
+        return $query->where('status_aktif', true);
+    }
+
+    /**
+     * Scope untuk filter posisi
+     */
+    public function scopeFilterByPosisi($query, $posisi)
+    {
+        return $query->where('posisi', $posisi);
+    }
+
+    /**
+     * Scope untuk pencarian cepat (5 field untuk hasil maksimal)
+     */
+    public function scopeSearch($query, $keyword)
+    {
+        return $query->where(function($q) use ($keyword) {
+            $q->where('nama_lengkap', 'LIKE', "%{$keyword}%")
+              ->orWhere('nomor_induk', 'LIKE', "%{$keyword}%")
+              ->orWhere('nik', 'LIKE', "%{$keyword}%")
+              ->orWhere('email', 'LIKE', "%{$keyword}%")
+              ->orWhere('no_wa', 'LIKE', "%{$keyword}%");
+        });
+    }
+
+    // ========== BOOT ==========
+
     protected static function boot(): void
     {
         parent::boot();

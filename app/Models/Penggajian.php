@@ -136,4 +136,27 @@ class Penggajian extends Model
     {
         return $query->whereNull('tanggal_cetak');
     }
+    // ========== SCOPES UNTUK INDEX ==========
+
+/**
+ * Scope untuk filter posisi (digunakan di index)
+ */
+public function scopeFilterByPosisi($query, $posisi)
+{
+    return $query->where('posisi', $posisi);
+}
+
+/**
+ * Scope untuk pencarian cepat (digunakan di index)
+ */
+public function scopeSearch($query, $keyword)
+{
+    return $query->where(function($q) use ($keyword) {
+        $q->where('nama_lengkap', 'LIKE', "%{$keyword}%")
+          ->orWhere('nomor_induk', 'LIKE', "%{$keyword}%")
+          ->orWhere('nik', 'LIKE', "%{$keyword}%")
+          ->orWhere('email', 'LIKE', "%{$keyword}%")
+          ->orWhere('no_wa', 'LIKE', "%{$keyword}%");
+    });
+}
 }
